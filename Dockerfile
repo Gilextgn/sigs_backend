@@ -26,5 +26,9 @@ RUN sed -i 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available
 
 RUN a2enmod rewrite
 
+# Copier et rendre exécutable le script de démarrage (entrypoint.sh)
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 EXPOSE 80
-CMD ["apache2-foreground"]
+ENTRYPOINT ["entrypoint.sh"]
