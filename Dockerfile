@@ -24,6 +24,9 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 
 RUN sed -i 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf
 
+# Ajouter AllowOverride All pour que .htaccess (rewrite Laravel) soit pris en compte
+RUN printf '<Directory /var/www/html/public>\n    AllowOverride All\n    Require all granted\n</Directory>\n' >> /etc/apache2/apache2.conf
+
 RUN a2enmod rewrite
 
 # Copier et rendre exécutable le script de démarrage (entrypoint.sh)
