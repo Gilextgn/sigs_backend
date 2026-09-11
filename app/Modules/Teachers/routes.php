@@ -7,41 +7,39 @@ use Modules\Teachers\Http\Controllers\TeacherAssignmentController;
 use Modules\Teachers\Http\Controllers\ScheduleController;
 use Modules\Teachers\Http\Controllers\AttendanceController;
 
-Route::middleware(['auth:sanctum', 'permission:teachers.manage'])->prefix('teachers')->group(function () {
-    Route::get('/', [TeacherController::class, 'index']);
-    Route::post('/', [TeacherController::class, 'store']);
-    Route::put('/{teacher}', [TeacherController::class, 'update']);
-    Route::delete('/{teacher}', [TeacherController::class, 'destroy']);
+/*
+ * Lecture et écriture sont séparées : consulter la liste des enseignants ne
+ * doit pas exiger le droit de la modifier (un caissier, ou un compte de
+ * démonstration, peut légitimement consulter sans pouvoir écrire).
+ */
+Route::middleware(['auth:sanctum', 'permission:teachers.view'])->group(function () {
+    Route::get('teachers', [TeacherController::class, 'index']);
+    Route::get('subjects', [SubjectController::class, 'index']);
+    Route::get('teacher-assignments', [TeacherAssignmentController::class, 'index']);
+    Route::get('schedules', [ScheduleController::class, 'index']);
+    Route::get('teacher-attendances', [AttendanceController::class, 'index']);
+    Route::get('teaching-sessions', [AttendanceController::class, 'sessions']);
 });
 
-Route::middleware(['auth:sanctum', 'permission:teachers.manage'])->prefix('subjects')->group(function () {
-    Route::get('/', [SubjectController::class, 'index']);
-    Route::post('/', [SubjectController::class, 'store']);
-    Route::put('/{subject}', [SubjectController::class, 'update']);
-    Route::delete('/{subject}', [SubjectController::class, 'destroy']);
-});
+Route::middleware(['auth:sanctum', 'permission:teachers.manage'])->group(function () {
+    Route::post('teachers', [TeacherController::class, 'store']);
+    Route::put('teachers/{teacher}', [TeacherController::class, 'update']);
+    Route::delete('teachers/{teacher}', [TeacherController::class, 'destroy']);
 
-Route::middleware(['auth:sanctum', 'permission:teachers.manage'])->prefix('teacher-assignments')->group(function () {
-    Route::get('/', [TeacherAssignmentController::class, 'index']);
-    Route::post('/', [TeacherAssignmentController::class, 'store']);
-    Route::put('/{teacherAssignment}', [TeacherAssignmentController::class, 'update']);
-    Route::delete('/{teacherAssignment}', [TeacherAssignmentController::class, 'destroy']);
-});
+    Route::post('subjects', [SubjectController::class, 'store']);
+    Route::put('subjects/{subject}', [SubjectController::class, 'update']);
+    Route::delete('subjects/{subject}', [SubjectController::class, 'destroy']);
 
-Route::middleware(['auth:sanctum', 'permission:teachers.manage'])->prefix('schedules')->group(function () {
-    Route::get('/', [ScheduleController::class, 'index']);
-    Route::post('/', [ScheduleController::class, 'store']);
-    Route::put('/{schedule}', [ScheduleController::class, 'update']);
-    Route::delete('/{schedule}', [ScheduleController::class, 'destroy']);
-});
+    Route::post('teacher-assignments', [TeacherAssignmentController::class, 'store']);
+    Route::put('teacher-assignments/{teacherAssignment}', [TeacherAssignmentController::class, 'update']);
+    Route::delete('teacher-assignments/{teacherAssignment}', [TeacherAssignmentController::class, 'destroy']);
 
-Route::middleware(['auth:sanctum', 'permission:teachers.manage'])->prefix('teacher-attendances')->group(function () {
-    Route::get('/', [AttendanceController::class, 'index']);
-    Route::post('/', [AttendanceController::class, 'store']);
-});
+    Route::post('schedules', [ScheduleController::class, 'store']);
+    Route::put('schedules/{schedule}', [ScheduleController::class, 'update']);
+    Route::delete('schedules/{schedule}', [ScheduleController::class, 'destroy']);
 
-Route::middleware(['auth:sanctum', 'permission:teachers.manage'])->prefix('teaching-sessions')->group(function () {
-    Route::get('/', [AttendanceController::class, 'sessions']);
-    Route::post('/', [AttendanceController::class, 'createSession']);
-    Route::post('/generate', [AttendanceController::class, 'generate']);
+    Route::post('teacher-attendances', [AttendanceController::class, 'store']);
+
+    Route::post('teaching-sessions', [AttendanceController::class, 'createSession']);
+    Route::post('teaching-sessions/generate', [AttendanceController::class, 'generate']);
 });
