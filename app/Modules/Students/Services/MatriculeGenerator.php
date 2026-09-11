@@ -19,9 +19,13 @@ class MatriculeGenerator
         $prefix = config('school.matricule_prefix', 'ELV');
 
         return DB::transaction(function () use ($year, $prefix) {
+            // PostgreSQL interdit FOR UPDATE combiné à une fonction d'agrégat
+            // (MAX) : on verrouille la dernière ligne via ORDER BY + LIMIT 1
+            // à la place, ce qui fonctionne aussi bien sur MySQL.
             $lastSequence = Student::where('registration_year', $year)
+                ->orderByDesc('registration_sequence')
                 ->lockForUpdate()
-                ->max('registration_sequence') ?? 0;
+                ->value('registration_sequence') ?? 0;
 
             $sequence = $lastSequence + 1;
             $matricule = sprintf('%s-%d-%06d', $prefix, $year, $sequence);
