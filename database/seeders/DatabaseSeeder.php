@@ -92,7 +92,9 @@ class DatabaseSeeder extends Seeder
         }
 
         // Compte admin de démarrage (à changer immédiatement en production)
-        User::updateOrCreate(
+        // firstOrCreate (et non updateOrCreate) : on ne veut pas écraser le
+        // mot de passe si l'admin l'a déjà changé lors d'un re-seed.
+        User::firstOrCreate(
             ['email' => 'admin@sigs.com'],
             [
                 'full_name' => 'Administrateur SIGS',
