@@ -57,6 +57,10 @@ class StudentController extends Controller
                 'last_name' => $data['last_name'],
                 'birth_date' => $data['birth_date'] ?? null,
                 'gender' => $data['gender'] ?? null,
+                // Explicite plutôt que de s'en remettre au défaut SQL : sinon
+                // l'attribut reste nul sur le modèle fraîchement créé et la
+                // réponse de l'API renvoie status: null au lieu de "active".
+                'status' => 'active',
                 'school_id' => 1,
             ]);
         });
