@@ -37,30 +37,22 @@ class StudentEnrollmentController extends Controller
      */
     public function context(Student $student)
     {
-        $currentYear = $student->academicYear;
-        $nextYear = $currentYear
-            ? AcademicYear::where('code', '>', $currentYear->code)->orderBy('code')->first()
-            : null;
+        $activeYear = AcademicYear::where('is_active', true)->first();
+        $lastYear = $student->academicYear;
 
         $debts = $this->closedYearDebts($student);
-        $alreadyEnrolled = $nextYear && StudentEnrollment::where('student_id', $student->id)
-            ->where('academic_year_id', $nextYear->id)
+        $alreadyEnrolled = $activeYear && StudentEnrollment::where('student_id', $student->id)
+            ->where('academic_year_id', $activeYear->id)
             ->exists();
 
-        $expectedNextCode = $currentYear ? $this->followingYearCode($currentYear->code) : null;
-
         return response()->json([
-            'current_year' => $currentYear ? ['id' => $currentYear->id, 'code' => $currentYear->code] : null,
-            'target_year' => $nextYear ? ['id' => $nextYear->id, 'code' => $nextYear->code] : null,
-            // Permet à l'écran de proposer la création de l'année manquante
-            // plutôt que de renvoyer l'utilisateur chercher dans Paramètres.
-            'expected_next_code' => $nextYear ? null : $expectedNextCode,
+            'last_year' => $lastYear ? ['id' => $lastYear->id, 'code' => $lastYear->code] : null,
+            'target_year' => $activeYear ? ['id' => $activeYear->id, 'code' => $activeYear->code] : null,
             'debts' => $debts,
             'blocked_reason' => match (true) {
-                ! $currentYear => "Cet élève n'est rattaché à aucune année scolaire : corrigez sa fiche avant de le réinscrire.",
-                ! $nextYear => "La réinscription vise l'année qui suit {$currentYear->code}, or elle n'existe pas encore.",
-                (bool) $nextYear->closed_at => "L'année {$nextYear->code} est clôturée.",
-                $alreadyEnrolled => "Cet élève est déjà inscrit pour l'année {$nextYear->code}.",
+                ! $activeYear => "Aucune année scolaire active : activez l'année en cours dans Paramètres.",
+                (bool) $activeYear->closed_at => "L'année {$activeYear->code} est clôturée : rouvrez-la pour pouvoir réinscrire.",
+                $alreadyEnrolled => "Cet élève est déjà inscrit pour l'année {$activeYear->code}.",
                 $debts->isNotEmpty() => "Réinscription bloquée : le solde d'une année clôturée n'est pas réglé.",
                 default => null,
             },
@@ -69,7 +61,7 @@ class StudentEnrollmentController extends Controller
 
     public function store(ReEnrollStudentRequest $request, Student $student)
     {
-        $targetYear = $this->nextYearFor($student);
+        $targetYear = $this->activeYear();
 
         abort_if(
             StudentEnrollment::where('student_id', $student->id)->where('academic_year_id', $targetYear->id)->exists(),
@@ -118,42 +110,19 @@ class StudentEnrollmentController extends Controller
     }
 
     /**
-     * La réinscription vise toujours l'année qui SUIT celle de l'élève, et
-     * non l'année active : une école réinscrit couramment en juin, alors que
-     * l'année en cours n'est ni close ni remplacée.
-     *
-     * Le classement se fait sur le code (format AAAA-AAAA) plutôt que sur
-     * date_start, qui reste nul pour les années créées depuis l'écran
-     * Paramètres (le formulaire n'envoie que le code).
+     * Réinscrire, c'est rattacher l'élève à l'année que l'école a déclarée
+     * active — celle pour laquelle elle inscrit en ce moment. Une seule
+     * année « en cours » à la fois, tout s'y rattache : pour préparer la
+     * rentrée suivante, on active la nouvelle année puis on réinscrit.
      */
-    private function nextYearFor(Student $student): AcademicYear
+    private function activeYear(): AcademicYear
     {
-        $currentYear = $student->academicYear;
-        abort_if(! $currentYear, 422, "Cet élève n'est rattaché à aucune année scolaire : corrigez sa fiche avant de le réinscrire.");
+        $activeYear = AcademicYear::where('is_active', true)->first();
 
-        $nextYear = AcademicYear::where('code', '>', $currentYear->code)->orderBy('code')->first();
+        abort_if(! $activeYear, 422, "Aucune année scolaire active : activez l'année en cours dans Paramètres.");
+        abort_if($activeYear->closed_at, 422, "L'année {$activeYear->code} est clôturée : rouvrez-la pour pouvoir réinscrire.");
 
-        abort_if(
-            ! $nextYear,
-            422,
-            "La réinscription vise l'année qui suit {$currentYear->code}, or elle n'existe pas encore.",
-        );
-        abort_if($nextYear->closed_at, 422, "L'année {$nextYear->code} est clôturée.");
-
-        return $nextYear;
-    }
-
-    /**
-     * Code de l'année qui suit, déduit du format AAAA-BBBB (2026-2027 ->
-     * 2027-2028). Null si le code ne suit pas ce format : on ne devine rien.
-     */
-    private function followingYearCode(string $code): ?string
-    {
-        if (! preg_match('/^(\d{4})-(\d{4})$/', $code, $parts)) {
-            return null;
-        }
-
-        return ((int) $parts[2]).'-'.((int) $parts[2] + 1);
+        return $activeYear;
     }
 
     /**

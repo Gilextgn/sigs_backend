@@ -128,4 +128,68 @@ class BackfillEnrollmentHistoryTest extends TestCase
         $this->assertNull($student->fresh()->academic_year_id);
         $this->assertDatabaseCount('student_enrollments', 0);
     }
+
+    private function runCorrection(): void
+    {
+        $migration = require database_path('migrations/2026_09_15_000005_move_backfilled_enrollments_to_previous_year.php');
+        $migration->up();
+    }
+
+    public function test_the_correction_moves_backfilled_pupils_to_the_previous_year(): void
+    {
+        $class = $this->createSchoolClass(50000);
+        $student = $this->legacyStudent($class->id, 'ELV-2026-000005', 5);
+        $activeYear = AcademicYear::where('is_active', true)->firstOrFail(); // 2026-2027
+
+        $installment = TuitionInstallment::create(['class_id' => $class->id, 'label' => 'Tranche', 'amount' => 50000]);
+        $cashier = $this->userWithPermissions();
+        $payment = app(PaymentService::class)->create($student->id, [[
+            'item_type' => 'TRANCHE',
+            'tuition_installment_id' => $installment->id,
+            'paid_amount' => 25000,
+        ]], $cashier->id);
+
+        $this->runMigration();
+        $this->assertSame($activeYear->id, $student->fresh()->academic_year_id);
+
+        $this->runCorrection();
+
+        // 2025-2026 est créée au besoin, et l'élève y est replacé : c'est
+        // pour 2026-2027 qu'il reste à le réinscrire.
+        $previousYear = AcademicYear::where('code', '2025-2026')->firstOrFail();
+        $this->assertSame($previousYear->id, $student->fresh()->academic_year_id);
+        $this->assertDatabaseHas('student_enrollments', [
+            'student_id' => $student->id,
+            'academic_year_id' => $previousYear->id,
+        ]);
+        $this->assertSame($previousYear->id, $payment->fresh()->academic_year_id);
+    }
+
+    public function test_the_correction_leaves_enrollments_made_in_the_app_alone(): void
+    {
+        $class = $this->createSchoolClass();
+        $student = $this->legacyStudent($class->id, 'ELV-2026-000006', 6);
+        $activeYear = AcademicYear::where('is_active', true)->firstOrFail();
+        $user = $this->userWithPermissions();
+
+        // Inscription saisie dans l'application : elle porte son auteur, donc
+        // la correction ne doit pas y toucher.
+        DB::table('students')->where('id', $student->id)->update(['academic_year_id' => $activeYear->id]);
+        DB::table('student_enrollments')->insert([
+            'student_id' => $student->id,
+            'academic_year_id' => $activeYear->id,
+            'class_id' => $class->id,
+            'enrolled_by_user_id' => $user->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->runCorrection();
+
+        $this->assertSame($activeYear->id, $student->fresh()->academic_year_id);
+        $this->assertDatabaseHas('student_enrollments', [
+            'student_id' => $student->id,
+            'academic_year_id' => $activeYear->id,
+        ]);
+    }
 }
