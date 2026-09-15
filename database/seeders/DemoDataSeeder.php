@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Modules\AcademicYears\Models\AcademicYear;
 use Modules\AcademicYears\Models\SchoolSetting;
 use Modules\Fees\Models\FeeType;
 use Modules\Payments\Services\PaymentService;
@@ -11,6 +12,7 @@ use Modules\SchoolClasses\Models\SchoolClass;
 use Modules\SchoolClasses\Models\SchoolCycle;
 use Modules\Students\Models\Guardian;
 use Modules\Students\Models\Student;
+use Modules\Students\Models\StudentEnrollment;
 use Modules\Students\Services\MatriculeGenerator;
 use Modules\Tranches\Models\TuitionInstallment;
 
@@ -153,6 +155,11 @@ class DemoDataSeeder extends Seeder
             ['2NDE-C', 'Rodrigue', 'Ahouansou', 'M', '2009-04-27', 'Gaston Ahouansou', 'Père', '97000020'],
         ];
 
+        // Les élèves de démonstration doivent être rattachés à l'année active,
+        // sinon la clôture d'année et la réinscription — précisément ce que la
+        // démonstration doit montrer — n'ont aucun élève sur quoi s'appuyer.
+        $activeYear = AcademicYear::where('is_active', true)->first();
+
         foreach ($roster as $index => [$classCode, $firstName, $lastName, $gender, $birthDate, $guardianName, $relationship, $phone]) {
             if (! isset($classes[$classCode])) {
                 continue;
@@ -171,6 +178,7 @@ class DemoDataSeeder extends Seeder
                 ...$matricules->generate(),
                 'school_id' => 1,
                 'class_id' => $class->id,
+                'academic_year_id' => $activeYear?->id,
                 'guardian_id' => $guardian->id,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
@@ -178,6 +186,14 @@ class DemoDataSeeder extends Seeder
                 'gender' => $gender,
                 'status' => 'active',
             ]);
+
+            if ($activeYear) {
+                StudentEnrollment::create([
+                    'student_id' => $student->id,
+                    'academic_year_id' => $activeYear->id,
+                    'class_id' => $class->id,
+                ]);
+            }
 
             // Deux élèves sur trois ont réglé leur première tranche : les
             // écrans « débiteurs » et « reste dû » ont ainsi du relief.
