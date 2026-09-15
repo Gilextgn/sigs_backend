@@ -23,6 +23,10 @@ class StudentResource extends JsonResource
                 'label' => $this->schoolClass->label,
                 'tuition_amount' => $this->schoolClass->tuition_amount,
             ]),
+            'academic_year' => $this->whenLoaded('academicYear', fn () => $this->academicYear ? [
+                'id' => $this->academicYear->id,
+                'code' => $this->academicYear->code,
+            ] : null),
             'guardian' => $this->whenLoaded('guardian', fn () => [
                 'id' => $this->guardian->id,
                 'full_name' => $this->guardian->full_name,

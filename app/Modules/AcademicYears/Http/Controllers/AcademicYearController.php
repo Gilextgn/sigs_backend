@@ -6,9 +6,16 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Modules\AcademicYears\Models\AcademicYear;
+use Modules\Debtors\Services\DebtCalculator;
+use Modules\Security\Models\AuditLog;
+use Modules\Students\Models\StudentEnrollment;
 
 class AcademicYearController extends Controller
 {
+    public function __construct(private DebtCalculator $debtCalculator)
+    {
+    }
+
     public function index()
     {
         return AcademicYear::orderByDesc('date_start')->get();
@@ -41,5 +48,63 @@ class AcademicYearController extends Controller
         });
 
         return $academicYear->fresh();
+    }
+
+    /**
+     * Liste des élèves inscrits cette année-là dont le solde est encore
+     * positif — recalculée en direct, jamais stockée (cf. close()).
+     */
+    public function closingPreview(AcademicYear $academicYear)
+    {
+        return response()->json($this->computeYearDebtors($academicYear));
+    }
+
+    public function close(AcademicYear $academicYear)
+    {
+        abort_if($academicYear->closed_at, 422, 'Cette année est déjà clôturée.');
+
+        DB::transaction(function () use ($academicYear) {
+            $academicYear->update(['closed_at' => now(), 'closed_by_user_id' => request()->user()?->id]);
+        });
+
+        AuditLog::record('academic_year.closed', 'AcademicYear', (string) $academicYear->id, ['code' => $academicYear->code]);
+
+        return response()->json([
+            'academic_year' => $academicYear->fresh(),
+            'debtors' => $this->computeYearDebtors($academicYear),
+        ]);
+    }
+
+    public function reopen(AcademicYear $academicYear)
+    {
+        abort_unless($academicYear->closed_at, 422, "Cette année n'est pas clôturée.");
+
+        $academicYear->update(['closed_at' => null, 'closed_by_user_id' => null]);
+
+        AuditLog::record('academic_year.reopened', 'AcademicYear', (string) $academicYear->id, ['code' => $academicYear->code]);
+
+        return $academicYear->fresh();
+    }
+
+    /**
+     * Un débiteur par ligne d'inscription de l'année dont le reste-dû
+     * (calculé sur la classe et l'année de CETTE inscription, pas la
+     * classe actuelle de l'élève) est strictement positif.
+     */
+    private function computeYearDebtors(AcademicYear $academicYear): array
+    {
+        return StudentEnrollment::with('student')
+            ->where('academic_year_id', $academicYear->id)
+            ->get()
+            ->map(fn (StudentEnrollment $enrollment) => [
+                'student_id' => $enrollment->student_id,
+                'matricule' => $enrollment->student->matricule,
+                'full_name' => $enrollment->student->fullName(),
+                ...$this->debtCalculator->calculate($enrollment->student_id, $enrollment->class_id, $academicYear->id),
+            ])
+            ->filter(fn ($row) => $row['outstanding_amount'] > 0)
+            ->sortByDesc('outstanding_amount')
+            ->values()
+            ->all();
     }
 }

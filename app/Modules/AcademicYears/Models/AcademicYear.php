@@ -8,7 +8,7 @@ class AcademicYear extends Model
 {
     public $timestamps = false;
 
-    protected $fillable = ['code', 'label', 'is_active', 'date_start', 'date_end'];
+    protected $fillable = ['code', 'label', 'is_active', 'date_start', 'date_end', 'closed_at', 'closed_by_user_id'];
 
     protected function casts(): array
     {
@@ -16,6 +16,7 @@ class AcademicYear extends Model
             'is_active' => 'boolean',
             'date_start' => 'date',
             'date_end' => 'date',
+            'closed_at' => 'datetime',
         ];
     }
 }

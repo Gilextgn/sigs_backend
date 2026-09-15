@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Modules\AcademicYears\Models\AcademicYear;
 use Modules\SchoolClasses\Models\SchoolClass;
 use Modules\Students\Models\Guardian;
 use Modules\Students\Models\Student;
@@ -85,6 +86,7 @@ class DemoRoleTest extends TestCase
             'label' => '1ère tranche',
             'amount' => 50000,
         ]);
+        $year = AcademicYear::firstOrFail();
 
         $writes = [
             ['postJson', '/api/students', ['class_id' => $class->id, 'first_name' => 'X', 'last_name' => 'Y', 'guardian' => ['full_name' => 'Z', 'relationship_label' => 'Père', 'phone' => '9700']]],
@@ -100,6 +102,9 @@ class DemoRoleTest extends TestCase
             ['postJson', '/api/teachers', ['full_name' => 'Prof', 'hourly_rate' => 1000]],
             ['postJson', '/api/users', ['full_name' => 'Intrus', 'email' => 'intrus@sigs.com', 'password' => 'motdepasse', 'role_id' => 1]],
             ['putJson', '/api/settings', ['school_name' => 'Piraté']],
+            ['postJson', "/api/academic-years/{$year->id}/close", []],
+            ['postJson', "/api/academic-years/{$year->id}/reopen", []],
+            ['postJson', "/api/students/{$student->id}/re-enroll", ['class_id' => $class->id]],
         ];
 
         foreach ($writes as [$method, $endpoint, $payload]) {

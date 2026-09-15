@@ -41,6 +41,11 @@ class PaymentService
             $payment = Payment::create([
                 'reference_code' => $this->generateReference(),
                 'student_id' => $studentId,
+                // L'année du paiement suit l'inscription courante de l'élève payeur : c'est ce qui
+                // permet de calculer un reste-dû par année (clôture, blocage de réinscription) sans
+                // dupliquer classes/tranches par année. Un paiement effectué après la clôture d'une
+                // année (pour solder une dette) reste donc bien rattaché à cette année-là.
+                'academic_year_id' => \Modules\Students\Models\Student::findOrFail($studentId)->academic_year_id,
                 'cashier_user_id' => $cashierUserId,
                 'payment_date' => now()->toDateString(),
                 'total_paid_amount' => $total,

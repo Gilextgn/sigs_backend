@@ -16,4 +16,7 @@ Route::middleware('auth:sanctum')->prefix('academic-years')->group(function () {
     Route::get('/', [AcademicYearController::class, 'index'])->middleware('permission:settings.view');
     Route::post('/', [AcademicYearController::class, 'store'])->middleware('permission:settings.manage');
     Route::post('/{academicYear}/activate', [AcademicYearController::class, 'activate'])->middleware('permission:settings.manage');
+    Route::get('/{academicYear}/closing-preview', [AcademicYearController::class, 'closingPreview'])->middleware('permission:settings.view');
+    Route::post('/{academicYear}/close', [AcademicYearController::class, 'close'])->middleware('permission:settings.manage');
+    Route::post('/{academicYear}/reopen', [AcademicYearController::class, 'reopen'])->middleware('permission:settings.manage');
 });

@@ -3,6 +3,7 @@
 namespace Modules\Students\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Modules\AcademicYears\Models\AcademicYear;
 use Modules\SchoolClasses\Models\SchoolClass;
 
 class Student extends Model
@@ -35,6 +36,16 @@ class Student extends Model
     public function payments()
     {
         return $this->hasMany(\Modules\Payments\Models\Payment::class);
+    }
+
+    public function enrollments()
+    {
+        return $this->hasMany(StudentEnrollment::class);
+    }
+
+    public function academicYear()
+    {
+        return $this->belongsTo(AcademicYear::class);
     }
 
     public function fullName(): string

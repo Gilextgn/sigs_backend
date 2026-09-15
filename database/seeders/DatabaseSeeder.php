@@ -34,6 +34,7 @@ class DatabaseSeeder extends Seeder
             'students.update' => 'Modifier un élève',
             'students.delete' => 'Supprimer / archiver un élève',
             'students.view' => 'Consulter la fiche élève',
+            'students.reenroll' => 'Réinscrire un élève pour une nouvelle année',
             'classes.view' => 'Consulter les classes',
             'classes.manage' => 'Gérer les classes et scolarités',
             'tranches.view' => 'Consulter les tranches',
