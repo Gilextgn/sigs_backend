@@ -47,13 +47,18 @@ class StudentEnrollmentController extends Controller
             ->where('academic_year_id', $nextYear->id)
             ->exists();
 
+        $expectedNextCode = $currentYear ? $this->followingYearCode($currentYear->code) : null;
+
         return response()->json([
             'current_year' => $currentYear ? ['id' => $currentYear->id, 'code' => $currentYear->code] : null,
             'target_year' => $nextYear ? ['id' => $nextYear->id, 'code' => $nextYear->code] : null,
+            // Permet à l'écran de proposer la création de l'année manquante
+            // plutôt que de renvoyer l'utilisateur chercher dans Paramètres.
+            'expected_next_code' => $nextYear ? null : $expectedNextCode,
             'debts' => $debts,
             'blocked_reason' => match (true) {
                 ! $currentYear => "Cet élève n'est rattaché à aucune année scolaire : corrigez sa fiche avant de le réinscrire.",
-                ! $nextYear => "Aucune année scolaire ne suit {$currentYear->code}. Créez-la d'abord dans Paramètres.",
+                ! $nextYear => "La réinscription vise l'année qui suit {$currentYear->code}, or elle n'existe pas encore.",
                 (bool) $nextYear->closed_at => "L'année {$nextYear->code} est clôturée.",
                 $alreadyEnrolled => "Cet élève est déjà inscrit pour l'année {$nextYear->code}.",
                 $debts->isNotEmpty() => "Réinscription bloquée : le solde d'une année clôturée n'est pas réglé.",
@@ -131,11 +136,24 @@ class StudentEnrollmentController extends Controller
         abort_if(
             ! $nextYear,
             422,
-            "Aucune année scolaire ne suit {$currentYear->code}. Créez-la d'abord dans Paramètres.",
+            "La réinscription vise l'année qui suit {$currentYear->code}, or elle n'existe pas encore.",
         );
         abort_if($nextYear->closed_at, 422, "L'année {$nextYear->code} est clôturée.");
 
         return $nextYear;
+    }
+
+    /**
+     * Code de l'année qui suit, déduit du format AAAA-BBBB (2026-2027 ->
+     * 2027-2028). Null si le code ne suit pas ce format : on ne devine rien.
+     */
+    private function followingYearCode(string $code): ?string
+    {
+        if (! preg_match('/^(\d{4})-(\d{4})$/', $code, $parts)) {
+            return null;
+        }
+
+        return ((int) $parts[2]).'-'.((int) $parts[2] + 1);
     }
 
     /**

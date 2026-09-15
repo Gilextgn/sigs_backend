@@ -105,6 +105,34 @@ class ReEnrollmentTest extends TestCase
         $this->assertDatabaseCount('student_enrollments', 1);
     }
 
+    public function test_the_context_suggests_the_missing_year_code(): void
+    {
+        $user = $this->userWithPermissions();
+        $currentYear = AcademicYear::where('is_active', true)->firstOrFail(); // 2026-2027
+        $class = $this->createSchoolClass();
+        $student = $this->aStudent($class, $currentYear);
+
+        // Être « active » ne suffit pas : la réinscription vise l'année d'après,
+        // et l'écran doit pouvoir proposer de la créer plutôt que de renvoyer
+        // l'utilisateur la chercher dans Paramètres.
+        $this->actingAs($user)
+            ->getJson("/api/students/{$student->id}/re-enrollment-context")
+            ->assertOk()
+            ->assertJsonPath('target_year', null)
+            ->assertJsonPath('expected_next_code', '2027-2028')
+            ->assertJsonPath('blocked_reason', "La réinscription vise l'année qui suit 2026-2027, or elle n'existe pas encore.");
+
+        // Une fois l'année créée, le blocage tombe et elle devient la cible.
+        $this->actingAs($user)->postJson('/api/academic-years', ['code' => '2027-2028', 'label' => 'Annee 2027-2028'])->assertCreated();
+
+        $this->actingAs($user)
+            ->getJson("/api/students/{$student->id}/re-enrollment-context")
+            ->assertOk()
+            ->assertJsonPath('target_year.code', '2027-2028')
+            ->assertJsonPath('expected_next_code', null)
+            ->assertJsonPath('blocked_reason', null);
+    }
+
     public function test_it_refuses_a_second_enrollment_for_the_same_year(): void
     {
         $user = $this->userWithPermissions();
