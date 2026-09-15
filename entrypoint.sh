@@ -1,18 +1,23 @@
 #!/bin/bash
-# Nettoyer et régénérer les caches de production
-php artisan config:clear
-php artisan route:clear
-php artisan cache:clear
-
 # L'instance de démonstration utilise une base SQLite dans le conteneur :
-# elle est éphémère, donc le fichier doit exister avant les migrations.
+# elle est éphémère, donc le fichier doit exister AVANT toute commande
+# artisan qui touche la base.
 if [ "$DEMO_MODE" = "true" ] && [ -n "$DB_DATABASE" ]; then
   mkdir -p "$(dirname "$DB_DATABASE")"
   touch "$DB_DATABASE"
 fi
 
-# Exécuter les migrations de base de données
+# config:clear / route:clear n'accèdent pas à la base : sans risque avant
+# les migrations.
+php artisan config:clear
+php artisan route:clear
+
+# Exécuter les migrations AVANT tout ce qui touche la base. Sur une base
+# neuve (démo SQLite), la table "cache" elle-même n'existe pas tant que
+# les migrations n'ont pas tourné — cache:clear doit donc venir après.
 php artisan migrate --force
+
+php artisan cache:clear
 
 # Démonstration publique uniquement : jeu de données fictif + compte en
 # lecture seule, régénérés à chaque démarrage. Jamais exécuté en
