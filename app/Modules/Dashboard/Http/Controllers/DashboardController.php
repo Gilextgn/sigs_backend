@@ -3,7 +3,8 @@
 namespace Modules\Dashboard\Http\Controllers;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
+use Modules\Debtors\Http\Controllers\DebtorController;
 use Modules\Payments\Models\Payment;
 use Modules\SchoolClasses\Models\SchoolClass;
 use Modules\Students\Models\Student;
@@ -18,20 +19,29 @@ class DashboardController extends Controller
         $teachersCount = Teacher::where('status', 'active')->count();
 
         $totalCollected = (float) Payment::whereNull('deleted_at')->sum('total_paid_amount');
+
+        // Même base que la liste des débiteurs : l'accueil, la barre du
+        // haut et l'écran Débiteurs affichent des chiffres qui se recoupent.
+        $debtors = app(DebtorController::class)->debtors();
         $theoreticalTotal = (float) SchoolClass::where('is_active', true)
             ->join('students', 'students.class_id', '=', 'classes.id')
             ->where('students.status', 'active')
             ->sum('classes.tuition_amount');
 
-        $outstanding = max($theoreticalTotal - $totalCollected, 0);
-        $recoveryRate = $theoreticalTotal > 0 ? round(($totalCollected / $theoreticalTotal) * 100, 1) : 0;
+        $outstanding = (float) $debtors->sum('outstanding_amount');
+        $debtorsCount = $debtors->count();
+        $recoveryRate = $theoreticalTotal > 0 ? round((($theoreticalTotal - $outstanding) / $theoreticalTotal) * 100, 1) : 0;
 
-        $debtorsCount = DB::table('students')
-            ->join('classes', 'classes.id', '=', 'students.class_id')
-            ->leftJoin(DB::raw('(select student_id, sum(total_paid_amount) as paid from payments where deleted_at is null group by student_id) as p'), 'p.student_id', '=', 'students.id')
-            ->where('students.status', 'active')
-            ->whereRaw('classes.tuition_amount > COALESCE(p.paid, 0)')
-            ->count();
+        $monthStart = now()->startOfMonth();
+        $previousMonthStart = now()->subMonthNoOverflow()->startOfMonth();
+        $sameDayPreviousMonth = now()->subMonthNoOverflow()->endOfDay();
+        $between = fn ($from, $to) => Payment::whereBetween('payment_date', self::dayBounds($from, $to));
+
+        // Mois en cours comparé au mois précédent à la même date : comparer
+        // le 12 septembre au mois d'août entier ferait toujours paraître
+        // septembre en recul.
+        $monthTotal = (float) $between($monthStart, now())->sum('total_paid_amount');
+        $previousMonthTotal = (float) $between($previousMonthStart, $sameDayPreviousMonth)->sum('total_paid_amount');
 
         return response()->json([
             'students' => $studentsCount,
@@ -41,37 +51,48 @@ class DashboardController extends Controller
             'outstanding' => round($outstanding, 2),
             'debtors' => $debtorsCount,
             'recovery_rate' => $recoveryRate,
+            'theoretical_total' => round($theoreticalTotal, 2),
+            'month' => [
+                'start' => $monthStart->toDateString(),
+                'total' => round($monthTotal, 2),
+                'payment_count' => $between($monthStart, now())->count(),
+                'previous_total' => round($previousMonthTotal, 2),
+                'change_percent' => $previousMonthTotal > 0
+                    ? round((($monthTotal - $previousMonthTotal) / $previousMonthTotal) * 100, 1)
+                    : null,
+            ],
+            'today' => [
+                'total' => round((float) $between(now(), now())->sum('total_paid_amount'), 2),
+                'payment_count' => $between(now(), now())->count(),
+            ],
         ]);
-    }
-
-    public function cycleBreakdown()
-    {
-        return DB::table('students')
-            ->join('classes', 'classes.id', '=', 'students.class_id')
-            ->join('school_cycles', 'school_cycles.id', '=', 'classes.cycle_id')
-            ->where('students.status', 'active')
-            ->selectRaw('school_cycles.label as cycle, count(*) as total')
-            ->groupBy('school_cycles.label')
-            ->orderByDesc('total')
-            ->get();
     }
 
     public function recentPayments()
     {
-        return Payment::with('student:id,matricule,first_name,last_name')
+        return Payment::with(['student:id,matricule,first_name,last_name', 'cashier:id,full_name'])
             ->orderByDesc('created_at')
-            ->limit(5)
+            ->limit(6)
             ->get();
     }
 
-    public function topDebtors()
+    /**
+     * Les plus gros reste-dû, avec le total et le nombre de débiteurs :
+     * la barre du haut n'a besoin que de ça, pas de la liste entière.
+     */
+    public function topDebtors(Request $request)
     {
-        return app(\Modules\Debtors\Http\Controllers\DebtorController::class)
-            ->index(request())
-            ->getData();
+        $limit = min(max($request->integer('limit', 5), 1), 50);
+        $debtors = app(DebtorController::class)->debtors();
+
+        return response()->json([
+            'total_outstanding' => round((float) $debtors->sum('outstanding_amount'), 2),
+            'debtors_count' => $debtors->count(),
+            'items' => $debtors->take($limit)->values(),
+        ]);
     }
 
-    public function statistics(\Illuminate\Http\Request $request)
+    public function statistics(Request $request)
     {
         $days = min(max($request->integer('days', 30), 7), 365);
         $end = now()->endOfDay();
@@ -80,10 +101,10 @@ class DashboardController extends Controller
         $previousEnd = (clone $start)->subSecond();
 
         $dailyRows = Payment::query()
-            ->whereBetween('payment_date', [$start->toDateString(), $end->toDateString()])
-            ->selectRaw('payment_date as date, SUM(total_paid_amount) as amount, COUNT(*) as payment_count')
-            ->groupBy('payment_date')
-            ->orderBy('payment_date')
+            ->whereBetween('payment_date', self::dayBounds($start, $end))
+            ->selectRaw('DATE(payment_date) as date, SUM(total_paid_amount) as amount, COUNT(*) as payment_count')
+            ->groupByRaw('DATE(payment_date)')
+            ->orderByRaw('DATE(payment_date)')
             ->get()
             ->keyBy('date');
 
@@ -98,12 +119,12 @@ class DashboardController extends Controller
             ]);
         }
 
-        $periodTotal = (float) Payment::whereBetween('payment_date', [$start->toDateString(), $end->toDateString()])->sum('total_paid_amount');
-        $previousTotal = (float) Payment::whereBetween('payment_date', [$previousStart->toDateString(), $previousEnd->toDateString()])->sum('total_paid_amount');
+        $periodTotal = (float) Payment::whereBetween('payment_date', self::dayBounds($start, $end))->sum('total_paid_amount');
+        $previousTotal = (float) Payment::whereBetween('payment_date', self::dayBounds($previousStart, $previousEnd))->sum('total_paid_amount');
 
         return response()->json([
             'period_total' => round($periodTotal, 2),
-            'period_payment_count' => Payment::whereBetween('payment_date', [$start->toDateString(), $end->toDateString()])->count(),
+            'period_payment_count' => Payment::whereBetween('payment_date', self::dayBounds($start, $end))->count(),
             'daily_average' => round($periodTotal / $days, 2),
             'comparison' => [
                 'previous_total' => round($previousTotal, 2),
@@ -111,5 +132,15 @@ class DashboardController extends Controller
             ],
             'daily' => $daily,
         ]);
+    }
+
+    /**
+     * Bornes couvrant des journées entières. payment_date est une colonne
+     * date, mais SQLite la stocke avec une heure (« 2026-09-17 00:00:00 ») :
+     * comparer à « 2026-09-17 » exclurait les paiements du dernier jour.
+     */
+    private static function dayBounds($from, $to): array
+    {
+        return [$from->copy()->startOfDay()->toDateTimeString(), $to->copy()->endOfDay()->toDateTimeString()];
     }
 }

@@ -54,6 +54,14 @@ class AcademicYearController extends Controller
      * Liste des élèves inscrits cette année-là dont le solde est encore
      * positif — recalculée en direct, jamais stockée (cf. close()).
      */
+    /** L'année en cours, affichée en permanence dans la barre du haut. */
+    public function active()
+    {
+        $year = AcademicYear::where('is_active', true)->first();
+
+        return response()->json($year ? ['id' => $year->id, 'code' => $year->code, 'closed_at' => $year->closed_at] : null);
+    }
+
     public function closingPreview(AcademicYear $academicYear)
     {
         return response()->json($this->computeYearDebtors($academicYear));
@@ -93,14 +101,25 @@ class AcademicYearController extends Controller
      */
     private function computeYearDebtors(AcademicYear $academicYear): array
     {
-        return StudentEnrollment::with('student')
+        $enrollments = StudentEnrollment::with(['student', 'schoolClass.installments'])
             ->where('academic_year_id', $academicYear->id)
-            ->get()
+            ->get();
+
+        $debts = $this->debtCalculator->calculateMany(
+            $enrollments->map(fn (StudentEnrollment $enrollment) => [
+                'student_id' => $enrollment->student_id,
+                'class_id' => $enrollment->class_id,
+                'class' => $enrollment->schoolClass,
+            ]),
+            $academicYear->id,
+        );
+
+        return $enrollments
             ->map(fn (StudentEnrollment $enrollment) => [
                 'student_id' => $enrollment->student_id,
                 'matricule' => $enrollment->student->matricule,
                 'full_name' => $enrollment->student->fullName(),
-                ...$this->debtCalculator->calculate($enrollment->student_id, $enrollment->class_id, $academicYear->id),
+                ...$debts[$enrollment->student_id],
             ])
             ->filter(fn ($row) => $row['outstanding_amount'] > 0)
             ->sortByDesc('outstanding_amount')

@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\User;
+use App\Support\DefaultRolePermissions;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Modules\AcademicYears\Models\AcademicYear;
@@ -62,6 +63,8 @@ class DatabaseSeeder extends Seeder
         // Le rôle admin reçoit toutes les permissions
         $admin = Role::where('code', 'admin')->first();
         $admin->permissions()->sync(Permission::pluck('id'));
+
+        DefaultRolePermissions::apply();
 
         // Cycles scolaires
         foreach ([

@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Modules\Payments\Http\Requests\StorePaymentRequest;
 use Modules\Payments\Models\Payment;
+use Modules\Payments\Services\PaymentLineBalances;
 use Modules\Payments\Services\PaymentService;
 use Modules\Security\Models\AuditLog;
 
@@ -18,10 +19,20 @@ class PaymentController extends Controller
 
     public function index(Request $request)
     {
-        return Payment::with(['student:id,matricule,first_name,last_name', 'cashier:id,full_name', 'items'])
+        $payments = Payment::with([
+            'student:id,matricule,first_name,last_name,class_id',
+            'student.schoolClass:id,label',
+            'cashier:id,full_name',
+            'items.tuitionInstallment:id,label',
+            'items.feeType:id,label',
+        ])
             ->when($request->student_id, fn ($q, $id) => $q->where('student_id', $id))
             ->orderByDesc('created_at')
             ->paginate($request->integer('per_page', 20));
+
+        PaymentLineBalances::attach($payments->getCollection());
+
+        return $payments;
     }
 
     public function dailySummary(Request $request)
@@ -57,7 +68,10 @@ class PaymentController extends Controller
 
     public function show(Payment $payment)
     {
-        return $payment->load('student.schoolClass', 'cashier:id,full_name', 'items.tuitionInstallment', 'items.feeType');
+        $payment->load('student.schoolClass', 'cashier:id,full_name', 'items.tuitionInstallment', 'items.feeType');
+        PaymentLineBalances::attach([$payment]);
+
+        return $payment;
     }
 
     public function destroy(Payment $payment)

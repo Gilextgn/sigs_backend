@@ -190,4 +190,78 @@ class PaymentTest extends TestCase
             ]],
         ])->assertCreated();
     }
+
+    public function test_a_partial_payment_is_an_acompte_until_the_line_is_settled(): void
+    {
+        $user = $this->userWithPermissions();
+        $class = $this->createSchoolClass(300000);
+        $student = $this->createStudent($class);
+        $installment = TuitionInstallment::create([
+            'class_id' => $class->id,
+            'label' => '1ère tranche',
+            'amount' => 100000,
+        ]);
+
+        $pay = fn (int $amount) => $this->actingAs($user)->postJson('/api/payments', [
+            'student_id' => $student->id,
+            'items' => [[
+                'item_type' => 'TRANCHE',
+                'tuition_installment_id' => $installment->id,
+                'paid_amount' => $amount,
+            ]],
+        ])->assertCreated();
+
+        $first = $pay(40000);
+        $first->assertJsonPath('is_partial', true)
+            ->assertJsonPath('items.0.line_status', 'partial')
+            ->assertJsonPath('items.0.label', '1ère tranche');
+        $this->assertEqualsWithDelta(60000, $first->json('items.0.remaining_after'), 0.001);
+
+        $second = $pay(60000);
+        $second->assertJsonPath('is_partial', false)
+            ->assertJsonPath('items.0.line_status', 'settled');
+        $this->assertEqualsWithDelta(100000, $second->json('items.0.paid_to_date'), 0.001);
+
+        // Réimprimé plus tard, le premier reçu montre toujours la situation
+        // du jour où il a été émis : un acompte, avec 60 000 restants.
+        $this->actingAs($user)->getJson('/api/payments/'.$first->json('id'))
+            ->assertJsonPath('items.0.line_status', 'partial')
+            ->assertJsonPath('items.0.remaining_after', 60000);
+
+        $list = $this->actingAs($user)->getJson('/api/payments')->assertOk();
+        $this->assertSame('1ère tranche', $list->json('data.0.items.0.label'));
+        $this->assertSame(['partial', 'settled'], collect($list->json('data'))->sortBy('id')->pluck('items.0.line_status')->values()->all());
+    }
+
+    public function test_home_top_bar_and_debtors_list_report_the_same_outstanding(): void
+    {
+        $user = $this->userWithPermissions();
+        $class = $this->createSchoolClass(300000);
+        $student = $this->createStudent($class);
+        $installment = TuitionInstallment::create([
+            'class_id' => $class->id,
+            'label' => '1ère tranche',
+            'amount' => 100000,
+        ]);
+
+        $this->actingAs($user)->postJson('/api/payments', [
+            'student_id' => $student->id,
+            'items' => [[
+                'item_type' => 'TRANCHE',
+                'tuition_installment_id' => $installment->id,
+                'paid_amount' => 40000,
+            ]],
+        ])->assertCreated();
+
+        $debtorsTotal = collect($this->actingAs($user)->getJson('/api/debtors')->assertOk()->json())->sum('outstanding_amount');
+        $summary = $this->actingAs($user)->getJson('/api/dashboard/summary')->assertOk();
+        $top = $this->actingAs($user)->getJson('/api/dashboard/top-debtors?limit=1')->assertOk();
+
+        $this->assertEqualsWithDelta(260000, $debtorsTotal, 0.001);
+        $this->assertEqualsWithDelta($debtorsTotal, $summary->json('outstanding'), 0.001);
+        $this->assertEqualsWithDelta($debtorsTotal, $top->json('total_outstanding'), 0.001);
+        $this->assertSame($summary->json('debtors'), $top->json('debtors_count'));
+        $this->assertCount(1, $top->json('items'));
+        $this->assertSame('partial', $top->json('items.0.unpaid_items.0.status'));
+    }
 }

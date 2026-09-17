@@ -65,6 +65,7 @@ class PaymentService
             ]);
 
             $payment->remaining_amount = $this->studentRemainingAmount($studentId);
+            PaymentLineBalances::attach([$payment]);
 
             return $payment;
         });

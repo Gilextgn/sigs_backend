@@ -3,6 +3,8 @@
 namespace Modules\Students\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Modules\AcademicYears\Models\AcademicYear;
 use Modules\Debtors\Services\DebtCalculator;
@@ -81,14 +83,153 @@ class StudentEnrollmentController extends Controller
             ], 422);
         }
 
-        $classId = $request->integer('class_id');
+        $this->enroll($student, $targetYear, $request->integer('class_id'), $request->user()->id);
 
-        $enrollment = DB::transaction(function () use ($student, $targetYear, $classId, $request) {
-            $enrollment = StudentEnrollment::create([
+        return new StudentResource($student->fresh('schoolClass', 'guardian', 'academicYear'));
+    }
+
+    /**
+     * Ce que doit l'élève aujourd'hui, sur sa classe actuelle : même calcul
+     * que la liste des débiteurs, lignes en acompte comprises.
+     */
+    public function balance(Student $student)
+    {
+        $student->load('schoolClass.installments');
+
+        return response()->json($this->debtCalculator->calculate($student->id, $student->class_id, null, null, $student->schoolClass));
+    }
+
+    /**
+     * Où en est la rentrée : les élèves de l'année écoulée, classés en
+     * réinscrits, bloqués par une dette d'année clôturée, ou en attente.
+     */
+    public function progress()
+    {
+        $activeYear = AcademicYear::where('is_active', true)->first();
+
+        if (! $activeYear) {
+            return response()->json(['active_year' => null, 'previous_year' => null, 'totals' => null, 'classes' => [], 'students' => []]);
+        }
+
+        $previousYear = AcademicYear::where('code', '<', $activeYear->code)->orderByDesc('code')->first();
+
+        $previousEnrollments = $previousYear
+            ? StudentEnrollment::with(['student.guardian', 'schoolClass.installments'])->where('academic_year_id', $previousYear->id)->get()
+            : collect();
+
+        $activeEnrollments = StudentEnrollment::where('academic_year_id', $activeYear->id)->get()->keyBy('student_id');
+
+        // Dette de l'année écoulée pour tout le monde en une passe : affiche
+        // ce que doit chaque famille, que la dette bloque ou non.
+        $previousDebts = $previousYear
+            ? $this->debtCalculator->calculateMany(
+                $previousEnrollments->map(fn (StudentEnrollment $e) => ['student_id' => $e->student_id, 'class_id' => $e->class_id, 'class' => $e->schoolClass]),
+                $previousYear->id,
+            )
+            : [];
+
+        $pendingIds = $previousEnrollments->pluck('student_id')->reject(fn ($id) => $activeEnrollments->has($id))->values();
+        $blockingDebts = $this->closedYearOutstandingByStudent($pendingIds);
+
+        $students = $previousEnrollments->map(function (StudentEnrollment $enrollment) use ($activeEnrollments, $blockingDebts, $previousDebts) {
+            $state = match (true) {
+                $activeEnrollments->has($enrollment->student_id) => 're_enrolled',
+                ($blockingDebts[$enrollment->student_id] ?? 0) > 0 => 'blocked',
+                default => 'pending',
+            };
+
+            return [
+                'student_id' => $enrollment->student_id,
+                'matricule' => $enrollment->student->matricule,
+                'full_name' => $enrollment->student->fullName(),
+                'guardian' => $enrollment->student->guardian
+                    ? ['full_name' => $enrollment->student->guardian->full_name, 'phone' => $enrollment->student->guardian->phone]
+                    : null,
+                'previous_class' => ['id' => $enrollment->class_id, 'label' => $enrollment->schoolClass?->label],
+                'current_class_id' => $activeEnrollments->get($enrollment->student_id)?->class_id,
+                'state' => $state,
+                'previous_year_outstanding' => $previousDebts[$enrollment->student_id]['outstanding_amount'] ?? 0,
+                'blocking_outstanding' => round((float) ($blockingDebts[$enrollment->student_id] ?? 0), 2),
+            ];
+        })->sortBy('full_name')->values();
+
+        $count = fn ($rows, string $state) => $rows->where('state', $state)->count();
+
+        $classes = $students->groupBy('previous_class.id')->map(fn ($rows) => [
+            'class_id' => $rows->first()['previous_class']['id'],
+            'label' => $rows->first()['previous_class']['label'],
+            'expected' => $rows->count(),
+            're_enrolled' => $count($rows, 're_enrolled'),
+            'blocked' => $count($rows, 'blocked'),
+            'pending' => $count($rows, 'pending'),
+        ])->sortBy([['pending', 'desc'], ['label', 'asc']])->values();
+
+        return response()->json([
+            'active_year' => ['id' => $activeYear->id, 'code' => $activeYear->code, 'closed_at' => $activeYear->closed_at],
+            'previous_year' => $previousYear ? ['id' => $previousYear->id, 'code' => $previousYear->code, 'closed_at' => $previousYear->closed_at] : null,
+            'totals' => [
+                'expected' => $students->count(),
+                're_enrolled' => $count($students, 're_enrolled'),
+                'blocked' => $count($students, 'blocked'),
+                'pending' => $count($students, 'pending'),
+                'new_students' => $activeEnrollments->keys()->diff($previousEnrollments->pluck('student_id'))->count(),
+            ],
+            'classes' => $classes,
+            'students' => $students,
+        ]);
+    }
+
+    /**
+     * Réinscription en lot vers une même classe. Chaque élève passe par les
+     * mêmes règles que la réinscription unitaire : un refus n'annule pas
+     * les autres, il est rapporté avec sa raison.
+     */
+    public function bulkStore(Request $request)
+    {
+        $data = $request->validate([
+            'class_id' => ['required', 'exists:classes,id'],
+            'student_ids' => ['required', 'array', 'min:1', 'max:500'],
+            'student_ids.*' => ['integer', 'distinct', 'exists:students,id'],
+        ]);
+
+        $targetYear = $this->activeYear();
+        $alreadyEnrolled = StudentEnrollment::where('academic_year_id', $targetYear->id)
+            ->whereIn('student_id', $data['student_ids'])
+            ->pluck('student_id')
+            ->flip();
+        $blockingDebts = $this->closedYearOutstandingByStudent(collect($data['student_ids']));
+
+        $enrolled = [];
+        $refused = [];
+
+        foreach (Student::whereIn('id', $data['student_ids'])->get() as $student) {
+            $reason = match (true) {
+                $alreadyEnrolled->has($student->id) => "Déjà inscrit pour l'année {$targetYear->code}.",
+                ($blockingDebts[$student->id] ?? 0) > 0 => "Bloqué : solde d'une année clôturée non réglé.",
+                default => null,
+            };
+
+            if ($reason) {
+                $refused[] = ['student_id' => $student->id, 'full_name' => $student->fullName(), 'reason' => $reason];
+
+                continue;
+            }
+
+            $this->enroll($student, $targetYear, (int) $data['class_id'], $request->user()->id);
+            $enrolled[] = $student->id;
+        }
+
+        return response()->json(['enrolled' => $enrolled, 'refused' => $refused]);
+    }
+
+    private function enroll(Student $student, AcademicYear $targetYear, int $classId, int $userId): void
+    {
+        DB::transaction(function () use ($student, $targetYear, $classId, $userId) {
+            StudentEnrollment::create([
                 'student_id' => $student->id,
                 'academic_year_id' => $targetYear->id,
                 'class_id' => $classId,
-                'enrolled_by_user_id' => $request->user()->id,
+                'enrolled_by_user_id' => $userId,
             ]);
 
             $student->update([
@@ -97,16 +238,45 @@ class StudentEnrollmentController extends Controller
                 // Réinscrire un élève transféré/archivé le réactive implicitement.
                 'status' => 'active',
             ]);
-
-            return $enrollment;
         });
 
         AuditLog::record('student.reenrolled', 'Student', (string) $student->id, [
             'academic_year_id' => $targetYear->id,
-            'class_id' => $enrollment->class_id,
+            'class_id' => $classId,
         ]);
+    }
 
-        return new StudentResource($student->fresh('schoolClass', 'guardian', 'academicYear'));
+    /**
+     * Reste-dû cumulé sur les années clôturées pour une liste d'élèves, en
+     * une passe par année clôturée (et non une par élève).
+     *
+     * @return array<int, float>
+     */
+    private function closedYearOutstandingByStudent(Collection $studentIds): array
+    {
+        if ($studentIds->isEmpty()) {
+            return [];
+        }
+
+        $totals = [];
+
+        StudentEnrollment::with('schoolClass.installments')
+            ->whereIn('student_id', $studentIds->all())
+            ->whereHas('academicYear', fn ($q) => $q->whereNotNull('closed_at'))
+            ->get()
+            ->groupBy('academic_year_id')
+            ->each(function ($enrollments, $yearId) use (&$totals) {
+                $debts = $this->debtCalculator->calculateMany(
+                    $enrollments->map(fn (StudentEnrollment $e) => ['student_id' => $e->student_id, 'class_id' => $e->class_id, 'class' => $e->schoolClass]),
+                    (int) $yearId,
+                );
+
+                foreach ($debts as $studentId => $debt) {
+                    $totals[$studentId] = ($totals[$studentId] ?? 0) + $debt['outstanding_amount'];
+                }
+            });
+
+        return $totals;
     }
 
     /**

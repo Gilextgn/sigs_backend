@@ -210,4 +210,70 @@ class ReEnrollmentTest extends TestCase
         $this->actingAs($user)->postJson("/api/academic-years/{$year->id}/reopen")->assertOk();
         $this->assertNull($year->fresh()->closed_at);
     }
+
+    public function test_the_progress_splits_last_year_students_by_state(): void
+    {
+        $user = $this->userWithPermissions();
+        $activeYear = AcademicYear::where('is_active', true)->firstOrFail();
+        $lastYear = $this->previousYear();
+        $class = $this->createSchoolClass(80000);
+
+        $done = $this->aStudent($class, $lastYear, 1);
+        $blocked = $this->aStudent($class, $lastYear, 2);
+        $pending = $this->aStudent($class, $lastYear, 3);
+
+        // Seul $blocked garde une dette : les deux autres ont soldé.
+        $installment = TuitionInstallment::create(['class_id' => $class->id, 'label' => 'Scolarité', 'amount' => 80000]);
+        foreach ([$done, $pending] as $student) {
+            $this->actingAs($user)->postJson('/api/payments', [
+                'student_id' => $student->id,
+                'items' => [['item_type' => 'TRANCHE', 'tuition_installment_id' => $installment->id, 'paid_amount' => 80000]],
+            ])->assertCreated();
+        }
+
+        $this->actingAs($user)->postJson("/api/academic-years/{$lastYear->id}/close")->assertOk();
+        $this->actingAs($user)->postJson("/api/students/{$done->id}/re-enroll", ['class_id' => $class->id])->assertOk();
+
+        $response = $this->actingAs($user)->getJson('/api/students/re-enrollment-progress')->assertOk()
+            ->assertJsonPath('active_year.code', $activeYear->code)
+            ->assertJsonPath('previous_year.code', $lastYear->code)
+            ->assertJsonPath('totals.expected', 3)
+            ->assertJsonPath('totals.re_enrolled', 1)
+            ->assertJsonPath('totals.blocked', 1)
+            ->assertJsonPath('totals.pending', 1)
+            ->assertJsonPath('classes.0.expected', 3);
+
+        $states = collect($response->json('students'))->pluck('state', 'student_id');
+        $this->assertSame('re_enrolled', $states[$done->id]);
+        $this->assertSame('blocked', $states[$blocked->id]);
+        $this->assertSame('pending', $states[$pending->id]);
+    }
+
+    public function test_bulk_re_enrollment_applies_the_same_rules_per_student(): void
+    {
+        $user = $this->userWithPermissions();
+        $lastYear = $this->previousYear();
+        $class = $this->createSchoolClass(80000);
+        $newClass = $this->createSchoolClass(90000);
+
+        $free = $this->aStudent($class, $lastYear, 1);
+        $indebted = $this->aStudent($class, $lastYear, 2);
+        $installment = TuitionInstallment::create(['class_id' => $class->id, 'label' => 'Scolarité', 'amount' => 80000]);
+        $this->actingAs($user)->postJson('/api/payments', [
+            'student_id' => $free->id,
+            'items' => [['item_type' => 'TRANCHE', 'tuition_installment_id' => $installment->id, 'paid_amount' => 80000]],
+        ])->assertCreated();
+
+        $this->actingAs($user)->postJson("/api/academic-years/{$lastYear->id}/close")->assertOk();
+
+        $response = $this->actingAs($user)->postJson('/api/students/re-enroll-bulk', [
+            'class_id' => $newClass->id,
+            'student_ids' => [$free->id, $indebted->id],
+        ])->assertOk();
+
+        $this->assertSame([$free->id], $response->json('enrolled'));
+        $this->assertSame($indebted->id, $response->json('refused.0.student_id'));
+        $this->assertSame($newClass->id, $free->fresh()->class_id);
+        $this->assertSame($class->id, $indebted->fresh()->class_id);
+    }
 }
