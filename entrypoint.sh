@@ -19,6 +19,16 @@ php artisan migrate --force
 
 php artisan cache:clear
 
+# Compte du propriétaire de la plateforme (celui qui crée et suspend les
+# écoles). Recréé à CHAQUE démarrage si les variables sont définies : une
+# migration ne tourne qu'une fois, donc ajouter les variables après un
+# premier déploiement n'aurait sinon aucun effet. Changer le mot de passe
+# dans l'environnement le change aussi sur le compte. Un échec ne doit pas
+# empêcher l'application de démarrer.
+if [ "$DEMO_MODE" != "true" ] && [ -n "$PLATFORM_OWNER_EMAIL" ] && [ -n "$PLATFORM_OWNER_PASSWORD" ]; then
+  php artisan platform:create-owner "$PLATFORM_OWNER_EMAIL" "$PLATFORM_OWNER_PASSWORD" --name="${PLATFORM_OWNER_NAME:-Propriétaire SIGS}" || true
+fi
+
 # Démonstration publique uniquement : jeu de données fictif + compte en
 # lecture seule, régénérés à chaque démarrage. Jamais exécuté en
 # production, où DEMO_MODE n'est pas défini.
