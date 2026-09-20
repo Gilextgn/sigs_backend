@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class TeachingSession extends Model
 {
+    use \App\Support\BelongsToSchool;
+
     protected $fillable = ['school_id', 'academic_year_id', 'class_id', 'subject_id', 'teacher_assignment_id', 'session_date', 'starts_at', 'ends_at', 'planned_minutes', 'realized_minutes', 'status', 'notes'];
 
     protected function casts(): array { return ['session_date' => 'date', 'planned_minutes' => 'integer', 'realized_minutes' => 'integer']; }

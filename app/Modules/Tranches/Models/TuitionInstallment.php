@@ -7,9 +7,11 @@ use Modules\SchoolClasses\Models\SchoolClass;
 
 class TuitionInstallment extends Model
 {
+    use \App\Support\BelongsToSchool;
+
     protected $table = 'tuition_installments';
 
-    protected $fillable = ['class_id', 'academic_year_id', 'label', 'amount', 'due_date'];
+    protected $fillable = ['school_id', 'class_id', 'academic_year_id', 'label', 'amount', 'due_date'];
 
     protected function casts(): array
     {

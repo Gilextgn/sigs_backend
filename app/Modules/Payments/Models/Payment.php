@@ -8,7 +8,7 @@ use Modules\Students\Models\Student;
 
 class Payment extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, \App\Support\BelongsToSchool;
 
     public $timestamps = false; // uniquement created_at, géré manuellement (pas de update après création)
 

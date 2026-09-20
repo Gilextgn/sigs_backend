@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Subject extends Model
 {
+    use \App\Support\BelongsToSchool;
+
     protected $fillable = ['school_id', 'code', 'label', 'is_active'];
 
     protected function casts(): array

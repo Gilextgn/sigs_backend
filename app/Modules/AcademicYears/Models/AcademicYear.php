@@ -6,9 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class AcademicYear extends Model
 {
+    use \App\Support\BelongsToSchool;
+
     public $timestamps = false;
 
-    protected $fillable = ['code', 'label', 'is_active', 'date_start', 'date_end', 'closed_at', 'closed_by_user_id'];
+    protected $fillable = ['school_id', 'code', 'label', 'is_active', 'date_start', 'date_end', 'closed_at', 'closed_by_user_id'];
 
     protected function casts(): array
     {

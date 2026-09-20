@@ -10,11 +10,14 @@ class RoleController extends Controller
 {
     public function index()
     {
-        return Role::with('permissions:id,code,label')->get();
+        // Le rôle propriétaire de la plateforme n'existe pas pour une école.
+        return Role::with(['permissions' => fn ($query) => $query->select('permissions.id', 'code', 'label')->where('code', 'not like', 'platform.%')])
+            ->where('code', '!=', 'platform_owner')
+            ->get();
     }
 
     public function permissionsCatalog()
     {
-        return Permission::orderBy('code')->get();
+        return Permission::where('code', 'not like', 'platform.%')->orderBy('code')->get();
     }
 }

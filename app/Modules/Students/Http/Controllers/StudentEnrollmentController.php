@@ -187,9 +187,9 @@ class StudentEnrollmentController extends Controller
     public function bulkStore(Request $request)
     {
         $data = $request->validate([
-            'class_id' => ['required', 'exists:classes,id'],
+            'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
             'student_ids' => ['required', 'array', 'min:1', 'max:500'],
-            'student_ids.*' => ['integer', 'distinct', 'exists:students,id'],
+            'student_ids.*' => ['integer', 'distinct', \App\Support\SchoolRule::exists('students')],
         ]);
 
         $targetYear = $this->activeYear();

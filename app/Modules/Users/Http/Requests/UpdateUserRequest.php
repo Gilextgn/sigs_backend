@@ -21,10 +21,10 @@ class UpdateUserRequest extends FormRequest
             'email' => ['sometimes', 'email', 'max:180', Rule::unique('users', 'email')->ignore($userId)],
             'password' => ['sometimes', 'nullable', 'string', 'min:8'],
             'phone' => ['nullable', 'string', 'max:40'],
-            'role_id' => ['sometimes', 'exists:roles,id'],
+            'role_id' => ['sometimes', Rule::exists('roles', 'id')->where(fn ($query) => $query->where('code', '!=', 'platform_owner'))],
             'status' => ['sometimes', 'in:active,inactive,locked'],
             'permissions' => ['array'],
-            'permissions.*' => ['string', 'exists:permissions,code'],
+            'permissions.*' => ['string', Rule::exists('permissions', 'code')->where(fn ($query) => $query->where('code', 'not like', 'platform.%'))],
         ];
     }
 }

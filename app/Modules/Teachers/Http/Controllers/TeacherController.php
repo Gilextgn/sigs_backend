@@ -18,7 +18,7 @@ class TeacherController extends Controller
 
     public function store(StoreTeacherRequest $request)
     {
-        return Teacher::create($request->validated() + ['school_id' => 1]);
+        return Teacher::create($request->validated());
     }
 
     public function update(StoreTeacherRequest $request, Teacher $teacher)

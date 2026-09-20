@@ -36,6 +36,22 @@ class User extends Authenticatable
         ];
     }
 
+    /**
+     * Une route « /users/{user} » ne résout que les utilisateurs de l'école
+     * courante : l'identifiant d'un compte d'une autre école donne un 404.
+     * (Pas de scope global : il fausserait la lecture de la session.)
+     */
+    public function resolveRouteBinding($value, $field = null)
+    {
+        $query = $this->where($field ?? $this->getRouteKeyName(), $value);
+
+        if (\App\Support\CurrentSchool::isBound()) {
+            $query->where('school_id', \App\Support\CurrentSchool::id());
+        }
+
+        return $query->first();
+    }
+
     public function role()
     {
         return $this->belongsTo(Role::class);

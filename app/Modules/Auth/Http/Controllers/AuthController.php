@@ -4,6 +4,7 @@ namespace Modules\Auth\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\SchoolAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
@@ -50,20 +51,22 @@ class AuthController extends Controller
             ]);
         }
 
+        // Une école suspendue ne peut plus ouvrir de session : on le dit
+        // clairement plutôt que de laisser croire à un mauvais mot de passe.
+        $school = SchoolAccess::resolve($user);
+
+        if ($user->school_id !== null && (! $school || $school->isSuspended())) {
+            Auth::logout();
+
+            return response()->json(SchoolAccess::suspensionPayload($school), 403);
+        }
+
         RateLimiter::clear($emailKey);
         RateLimiter::clear($ipKey);
         $request->session()->regenerate();
         $user->forceFill(['last_login_at' => now()])->save();
 
-        return response()->json([
-            'user' => [
-                'id' => $user->id,
-                'full_name' => $user->full_name,
-                'email' => $user->email,
-                'role' => $user->role?->code,
-                'permissions' => $user->permissions(),
-            ],
-        ]);
+        return response()->json(['user' => SchoolAccess::userPayload($user)]);
     }
 
     public function logout(Request $request)

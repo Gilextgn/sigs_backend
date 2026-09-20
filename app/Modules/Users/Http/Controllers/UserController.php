@@ -15,6 +15,7 @@ class UserController extends Controller
     public function index()
     {
         return User::with('role')
+            ->where('school_id', \App\Support\CurrentSchool::id())
             ->orderBy('full_name')
             ->paginate(request()->integer('per_page', 20));
     }
@@ -44,7 +45,7 @@ class UserController extends Controller
                 'phone' => $data['phone'] ?? null,
                 'role_id' => $data['role_id'],
                 'status' => $data['status'] ?? 'active',
-                'school_id' => 1,
+                'school_id' => \App\Support\CurrentSchool::id(),
             ]);
 
             $this->syncPermissionOverrides($user, $data['permissions'] ?? []);

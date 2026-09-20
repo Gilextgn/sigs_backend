@@ -20,7 +20,7 @@ class PayrollController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'teacher_id' => ['required', 'exists:teachers,id'],
+            'teacher_id' => ['required', \App\Support\SchoolRule::exists('teachers')],
             'period' => ['required', 'string', 'size:7'],
             'bonus_amount' => ['nullable', 'numeric', 'min:0'],
             'deduction_amount' => ['nullable', 'numeric', 'min:0'],
@@ -35,7 +35,7 @@ class PayrollController extends Controller
     public function estimate(Request $request)
     {
         $data = $request->validate([
-            'teacher_id' => ['required', 'exists:teachers,id'],
+            'teacher_id' => ['required', \App\Support\SchoolRule::exists('teachers')],
             'period' => ['required', 'date_format:Y-m'],
         ]);
 

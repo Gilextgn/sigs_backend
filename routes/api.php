@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\SchoolAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -9,14 +10,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/ping', fn () => response()->json(['status' => 'ok', 'app' => 'SIGS Admin API']));
 
-Route::middleware('auth:sanctum')->get('/me', function (Request $request) {
+Route::middleware(['auth:sanctum', 'school'])->get('/me', function (Request $request) {
     $user = $request->user()->load('role');
 
-    return response()->json([
-        'id' => $user->id,
-        'full_name' => $user->full_name,
-        'email' => $user->email,
-        'role' => $user->role?->code,
-        'permissions' => $user->permissions(),
-    ]);
+    return response()->json(SchoolAccess::userPayload($user));
 });

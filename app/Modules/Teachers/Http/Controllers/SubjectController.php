@@ -20,11 +20,11 @@ class SubjectController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'code' => ['required', 'string', 'max:50', 'unique:subjects,code'],
+            'code' => ['required', 'string', 'max:50', \App\Support\SchoolRule::unique('subjects', 'code')],
             'label' => ['required', 'string', 'max:120'],
         ]);
 
-        return response()->json(Subject::create($data + ['school_id' => 1]), 201);
+        return response()->json(Subject::create($data), 201);
     }
 
     public function update(Request $request, Subject $subject)

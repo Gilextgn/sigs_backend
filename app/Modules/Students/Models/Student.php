@@ -8,6 +8,8 @@ use Modules\SchoolClasses\Models\SchoolClass;
 
 class Student extends Model
 {
+    use \App\Support\BelongsToSchool;
+
     protected $fillable = [
         'school_id', 'academic_year_id', 'class_id', 'guardian_id',
         'registration_year', 'registration_sequence', 'matricule',

@@ -47,6 +47,7 @@ class PaymentController extends Controller
             'by_cashier' => DB::table('payments')
                 ->join('users', 'users.id', '=', 'payments.cashier_user_id')
                 ->whereDate('payments.payment_date', $date)
+                ->where('payments.school_id', \App\Support\CurrentSchool::id())
                 ->whereNull('payments.deleted_at')
                 ->select('users.id', 'users.full_name', DB::raw('COUNT(payments.id) as payment_count'), DB::raw('SUM(payments.total_paid_amount) as total_paid_amount'))
                 ->groupBy('users.id', 'users.full_name')

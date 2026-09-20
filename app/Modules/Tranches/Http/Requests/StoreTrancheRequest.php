@@ -14,7 +14,7 @@ class StoreTrancheRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'class_id' => ['required', 'exists:classes,id'],
+            'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
             'label' => ['required', 'string', 'max:120'], // champ tranche obligatoire (select côté UI)
             'amount' => ['required', 'numeric', 'min:0.01'],
             'due_date' => ['nullable', 'date'],

@@ -14,8 +14,8 @@ class UpdateStudentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'class_id' => ['sometimes', 'exists:classes,id'],
-            'guardian_id' => ['sometimes', 'exists:guardians,id'],
+            'class_id' => ['sometimes', \App\Support\SchoolRule::exists('classes')],
+            'guardian_id' => ['sometimes', \App\Support\SchoolRule::exists('guardians')],
             'first_name' => ['sometimes', 'string', 'max:120'],
             'last_name' => ['sometimes', 'string', 'max:120'],
             'birth_date' => ['nullable', 'date', 'before:today'],

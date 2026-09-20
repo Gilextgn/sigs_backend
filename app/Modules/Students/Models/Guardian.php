@@ -6,9 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class Guardian extends Model
 {
+    use \App\Support\BelongsToSchool;
+
     public $timestamps = false;
 
-    protected $fillable = ['full_name', 'relationship_label', 'phone', 'address'];
+    protected $fillable = ['school_id', 'full_name', 'relationship_label', 'phone', 'address'];
 
     protected function casts(): array
     {

@@ -7,7 +7,9 @@ use Modules\SchoolClasses\Models\SchoolClass;
 
 class FeeType extends Model
 {
-    protected $fillable = ['code', 'label', 'category', 'amount', 'is_active', 'is_mandatory'];
+    use \App\Support\BelongsToSchool;
+
+    protected $fillable = ['school_id', 'code', 'label', 'category', 'amount', 'is_active', 'is_mandatory'];
 
     protected function casts(): array
     {

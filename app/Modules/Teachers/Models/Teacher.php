@@ -6,7 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class Teacher extends Model
 {
-    protected $fillable = ['full_name', 'phone', 'subject', 'monthly_salary', 'status'];
+    use \App\Support\BelongsToSchool;
+
+    protected $fillable = ['school_id', 'full_name', 'phone', 'subject', 'monthly_salary', 'status'];
 
     protected function casts(): array
     {

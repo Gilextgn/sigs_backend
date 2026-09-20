@@ -7,7 +7,9 @@ use Modules\Teachers\Models\Teacher;
 
 class PayrollEntry extends Model
 {
-    protected $fillable = ['teacher_id', 'period', 'base_amount', 'bonus_amount', 'deduction_amount', 'status', 'paid_at'];
+    use \App\Support\BelongsToSchool;
+
+    protected $fillable = ['school_id', 'teacher_id', 'period', 'base_amount', 'bonus_amount', 'deduction_amount', 'status', 'paid_at'];
 
     protected function casts(): array
     {

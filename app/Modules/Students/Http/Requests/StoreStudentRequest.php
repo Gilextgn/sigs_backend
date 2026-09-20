@@ -14,7 +14,7 @@ class StoreStudentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'class_id' => ['required', 'exists:classes,id'],
+            'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
             'first_name' => ['required', 'string', 'max:120'],
             'last_name' => ['required', 'string', 'max:120'],
             'birth_date' => ['nullable', 'date', 'before:today'],
@@ -22,7 +22,7 @@ class StoreStudentRequest extends FormRequest
 
             // Le tuteur est obligatoire à l'inscription (règle métier existante).
             // Soit on référence un tuteur existant, soit on en crée un nouveau inline.
-            'guardian_id' => ['required_without:guardian', 'nullable', 'exists:guardians,id'],
+            'guardian_id' => ['required_without:guardian', 'nullable', \App\Support\SchoolRule::exists('guardians')],
             'guardian' => ['required_without:guardian_id', 'nullable', 'array'],
             'guardian.full_name' => ['required_with:guardian', 'string', 'max:180'],
             'guardian.relationship_label' => ['required_with:guardian', 'string', 'max:50'],

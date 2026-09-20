@@ -41,17 +41,23 @@ class ModuleServiceProvider extends ServiceProvider
                 continue;
             }
 
-            $this->loadModuleRoutes($modulePath);
+            $this->loadModuleRoutes($modulePath, $moduleName);
             $this->loadModuleMigrations($modulePath);
         }
     }
 
-    private function loadModuleRoutes(string $modulePath): void
+    /**
+     * Toutes les routes d'un module passent par le middleware « school » :
+     * il fixe l'établissement (isolation des données) et applique la
+     * suspension. Seul le module Platform y échappe, car il pilote les
+     * établissements depuis l'extérieur.
+     */
+    private function loadModuleRoutes(string $modulePath, string $moduleName): void
     {
         $routesFile = $modulePath.'/routes.php';
 
         if (file_exists($routesFile)) {
-            Route::middleware('api')
+            Route::middleware($moduleName === 'Platform' ? ['api'] : ['api', 'school'])
                 ->prefix('api')
                 ->group($routesFile);
         }

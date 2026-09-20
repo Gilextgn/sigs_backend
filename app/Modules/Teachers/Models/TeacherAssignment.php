@@ -7,6 +7,8 @@ use Modules\SchoolClasses\Models\SchoolClass;
 
 class TeacherAssignment extends Model
 {
+    use \App\Support\BelongsToSchool;
+
     protected $fillable = ['school_id', 'academic_year_id', 'teacher_id', 'class_id', 'subject_id', 'hourly_rate', 'weekly_hours', 'is_active'];
 
     protected function casts(): array

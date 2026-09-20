@@ -21,10 +21,10 @@ class TeacherAssignmentController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'academic_year_id' => ['nullable', 'exists:academic_years,id'],
-            'teacher_id' => ['required', 'exists:teachers,id'],
-            'class_id' => ['required', 'exists:classes,id'],
-            'subject_id' => ['required', 'exists:subjects,id'],
+            'academic_year_id' => ['nullable', \App\Support\SchoolRule::exists('academic_years')],
+            'teacher_id' => ['required', \App\Support\SchoolRule::exists('teachers')],
+            'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
+            'subject_id' => ['required', \App\Support\SchoolRule::exists('subjects')],
             'hourly_rate' => ['required', 'numeric', 'min:0.01'],
             'weekly_hours' => ['nullable', 'numeric', 'min:0'],
         ]);
@@ -36,7 +36,7 @@ class TeacherAssignmentController extends Controller
                 'class_id' => $data['class_id'],
                 'subject_id' => $data['subject_id'],
             ],
-            $data + ['school_id' => 1],
+            $data,
         );
 
         return response()->json($assignment->load(['teacher:id,full_name', 'schoolClass:id,label', 'subject:id,label']), $assignment->wasRecentlyCreated ? 201 : 200);

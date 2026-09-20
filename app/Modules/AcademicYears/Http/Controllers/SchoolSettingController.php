@@ -23,7 +23,7 @@ class SchoolSettingController extends Controller
 
         foreach ($data as $key => $value) {
             SchoolSetting::updateOrCreate(
-                ['school_id' => 1, 'setting_key' => $key],
+                ['school_id' => \App\Support\CurrentSchool::id(), 'setting_key' => $key],
                 ['setting_value' => $value],
             );
         }
@@ -55,7 +55,7 @@ class SchoolSettingController extends Controller
         $file->move($directory, $filename);
 
         SchoolSetting::updateOrCreate(
-            ['school_id' => 1, 'setting_key' => 'letterhead_path'],
+            ['school_id' => \App\Support\CurrentSchool::id(), 'setting_key' => 'letterhead_path'],
             ['setting_value' => 'uploads/letterheads/'.$filename],
         );
 
@@ -67,7 +67,7 @@ class SchoolSettingController extends Controller
     public function deleteLetterhead()
     {
         $this->deleteFile($this->value('letterhead_path'));
-        SchoolSetting::where('school_id', 1)->where('setting_key', 'letterhead_path')->delete();
+        SchoolSetting::where('school_id', \App\Support\CurrentSchool::id())->where('setting_key', 'letterhead_path')->delete();
 
         return response()->json($this->settings());
     }
@@ -83,7 +83,7 @@ class SchoolSettingController extends Controller
 
     private function value(string $key): ?string
     {
-        return SchoolSetting::where('school_id', 1)
+        return SchoolSetting::where('school_id', \App\Support\CurrentSchool::id())
             ->where('setting_key', $key)
             ->value('setting_value');
     }

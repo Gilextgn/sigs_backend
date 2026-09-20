@@ -3,6 +3,7 @@
 namespace Modules\Users\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreUserRequest extends FormRequest
 {
@@ -18,11 +19,11 @@ class StoreUserRequest extends FormRequest
             'email' => ['required', 'email', 'max:180', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8'],
             'phone' => ['nullable', 'string', 'max:40'],
-            'role_id' => ['required', 'exists:roles,id'],
+            'role_id' => ['required', Rule::exists('roles', 'id')->where(fn ($query) => $query->where('code', '!=', 'platform_owner'))],
             'status' => ['nullable', 'in:active,inactive,locked'],
             // permissions individuelles cochées en plus du rôle (checkbox UI)
             'permissions' => ['array'],
-            'permissions.*' => ['string', 'exists:permissions,code'],
+            'permissions.*' => ['string', Rule::exists('permissions', 'code')->where(fn ($query) => $query->where('code', 'not like', 'platform.%'))],
         ];
     }
 }

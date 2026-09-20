@@ -62,7 +62,8 @@ class DatabaseSeeder extends Seeder
 
         // Le rôle admin reçoit toutes les permissions
         $admin = Role::where('code', 'admin')->first();
-        $admin->permissions()->sync(Permission::pluck('id'));
+        // Jamais de droit plateforme : il est réservé au propriétaire (compte sans école).
+        $admin->permissions()->sync(Permission::where('code', 'not like', 'platform.%')->pluck('id'));
 
         DefaultRolePermissions::apply();
 

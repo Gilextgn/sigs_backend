@@ -23,7 +23,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'permission' => \App\Http\Middleware\EnsurePermission::class,
-            'school' => \App\Http\Middleware\ResolveActiveSchool::class,
+            'platform' => \App\Http\Middleware\EnsurePlatformOwner::class,
+            'school' => \App\Http\Middleware\EnforceSchoolAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

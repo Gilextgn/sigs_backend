@@ -7,6 +7,8 @@ use Modules\Tranches\Models\TuitionInstallment;
 
 class SchoolClass extends Model
 {
+    use \App\Support\BelongsToSchool;
+
     protected $table = 'classes';
 
     protected $fillable = [

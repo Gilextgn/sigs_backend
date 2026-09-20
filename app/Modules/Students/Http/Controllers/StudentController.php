@@ -68,7 +68,7 @@ class StudentController extends Controller
                 // l'attribut reste nul sur le modèle fraîchement créé et la
                 // réponse de l'API renvoie status: null au lieu de "active".
                 'status' => 'active',
-                'school_id' => 1,
+                'school_id' => \App\Support\CurrentSchool::id(),
             ]);
 
             StudentEnrollment::create([

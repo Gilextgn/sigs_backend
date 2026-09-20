@@ -53,7 +53,7 @@ class AttendanceController extends Controller
                 }
 
                 TeachingSession::create([
-                    'school_id' => 1,
+                    'school_id' => \App\Support\CurrentSchool::id(),
                     'academic_year_id' => $schedule->academic_year_id,
                     'class_id' => $schedule->class_id,
                     'subject_id' => $schedule->subject_id,
@@ -85,12 +85,12 @@ class AttendanceController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'teaching_session_id' => ['required', 'exists:teaching_sessions,id'],
-            'teacher_id' => ['required', 'exists:teachers,id'],
+            'teaching_session_id' => ['required', \App\Support\SchoolRule::exists('teaching_sessions')],
+            'teacher_id' => ['required', \App\Support\SchoolRule::exists('teachers')],
             'status' => ['required', 'in:present,absent,justified,replaced'],
             'absence_minutes' => ['nullable', 'integer', 'min:0'],
             'reason' => ['nullable', 'string'],
-            'replacement_teacher_id' => ['nullable', 'exists:teachers,id'],
+            'replacement_teacher_id' => ['nullable', \App\Support\SchoolRule::exists('teachers')],
         ]);
 
         $session = TeachingSession::findOrFail($data['teaching_session_id']);
@@ -120,16 +120,16 @@ class AttendanceController extends Controller
     public function createSession(Request $request)
     {
         $data = $request->validate([
-            'academic_year_id' => ['nullable', 'exists:academic_years,id'],
-            'class_id' => ['required', 'exists:classes,id'],
-            'subject_id' => ['required', 'exists:subjects,id'],
-            'teacher_assignment_id' => ['required', 'exists:teacher_assignments,id'],
+            'academic_year_id' => ['nullable', \App\Support\SchoolRule::exists('academic_years')],
+            'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
+            'subject_id' => ['required', \App\Support\SchoolRule::exists('subjects')],
+            'teacher_assignment_id' => ['required', \App\Support\SchoolRule::exists('teacher_assignments')],
             'session_date' => ['required', 'date'],
             'starts_at' => ['required', 'date_format:H:i'],
             'ends_at' => ['required', 'date_format:H:i', 'after:starts_at'],
             'planned_minutes' => ['required', 'integer', 'min:1'],
         ]);
 
-        return response()->json(TeachingSession::create($data + ['school_id' => 1]), 201);
+        return response()->json(TeachingSession::create($data), 201);
     }
 }

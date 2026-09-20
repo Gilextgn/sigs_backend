@@ -20,7 +20,7 @@ class ClassController extends Controller
 
     public function store(StoreClassRequest $request)
     {
-        return SchoolClass::create($request->validated() + ['school_id' => 1]);
+        return SchoolClass::create($request->validated());
     }
 
     public function show(SchoolClass $class)

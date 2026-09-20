@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class AuditLog extends Model
 {
+    use \App\Support\BelongsToSchool;
+
     public $timestamps = false;
 
     protected $fillable = [
@@ -30,7 +32,7 @@ class AuditLog extends Model
     public static function record(string $actionCode, string $entityName, ?string $entityId = null, array $details = []): self
     {
         return self::create([
-            'school_id' => 1,
+            'school_id' => \App\Support\CurrentSchool::id(),
             'actor_user_id' => request()->user()?->id,
             'action_code' => $actionCode,
             'entity_name' => $entityName,

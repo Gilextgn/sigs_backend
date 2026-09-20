@@ -14,7 +14,7 @@ class StoreFeeTypeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code' => ['nullable', 'string', 'max:50', 'unique:fee_types,code'],
+            'code' => ['nullable', 'string', 'max:50', \App\Support\SchoolRule::unique('fee_types', 'code')],
             'label' => ['required', 'string', 'max:150'],
             'category' => ['nullable', 'string', 'max:80'],
             'amount' => ['required', 'numeric', 'min:0.01'],
@@ -22,7 +22,7 @@ class StoreFeeTypeRequest extends FormRequest
             'is_mandatory' => ['boolean'],
             // affectation à plusieurs classes en un clic
             'class_ids' => ['array'],
-            'class_ids.*' => ['exists:classes,id'],
+            'class_ids.*' => [\App\Support\SchoolRule::exists('classes')],
         ];
     }
 }

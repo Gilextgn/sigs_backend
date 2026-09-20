@@ -19,10 +19,10 @@ class ScheduleController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'academic_year_id' => ['nullable', 'exists:academic_years,id'],
-            'class_id' => ['required', 'exists:classes,id'],
-            'subject_id' => ['required', 'exists:subjects,id'],
-            'teacher_assignment_id' => ['required', 'exists:teacher_assignments,id'],
+            'academic_year_id' => ['nullable', \App\Support\SchoolRule::exists('academic_years')],
+            'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
+            'subject_id' => ['required', \App\Support\SchoolRule::exists('subjects')],
+            'teacher_assignment_id' => ['required', \App\Support\SchoolRule::exists('teacher_assignments')],
             'day_of_week' => ['required', 'integer', 'between:1,7'],
             'starts_at' => ['required', 'date_format:H:i'],
             'ends_at' => ['required', 'date_format:H:i', 'after:starts_at'],
@@ -40,7 +40,7 @@ class ScheduleController extends Controller
             ->exists();
         abort_if($overlap, 422, 'Cette classe a déjà un cours sur ce créneau.');
 
-        return response()->json(ClassSchedule::create($data + ['school_id' => 1]), 201);
+        return response()->json(ClassSchedule::create($data), 201);
     }
 
     public function update(Request $request, ClassSchedule $schedule)

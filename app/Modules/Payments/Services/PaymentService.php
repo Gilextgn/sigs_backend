@@ -49,7 +49,7 @@ class PaymentService
                 'cashier_user_id' => $cashierUserId,
                 'payment_date' => now()->toDateString(),
                 'total_paid_amount' => $total,
-                'school_id' => 1,
+                'school_id' => \App\Support\CurrentSchool::id(),
                 'created_at' => now(),
             ]);
 

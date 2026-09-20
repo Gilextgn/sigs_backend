@@ -14,7 +14,7 @@ class ReEnrollStudentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'class_id' => ['required', 'exists:classes,id'],
+            'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
         ];
     }
 }

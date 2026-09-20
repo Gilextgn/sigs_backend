@@ -24,7 +24,7 @@ class AcademicYearController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'code' => ['required', 'string', 'max:20', 'unique:academic_years,code'],
+            'code' => ['required', 'string', 'max:20', \App\Support\SchoolRule::unique('academic_years', 'code')],
             'label' => ['required', 'string', 'max:60'],
             'date_start' => ['nullable', 'date'],
             'date_end' => ['nullable', 'date', 'after:date_start'],
