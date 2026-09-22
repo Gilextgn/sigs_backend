@@ -196,10 +196,33 @@ class ReEnrollmentTest extends TestCase
             ->assertOk();
     }
 
+    public function test_a_year_cannot_be_closed_in_the_middle_of_it(): void
+    {
+        $user = $this->userWithPermissions();
+        $year = AcademicYear::create(['code' => '2030-2031', 'label' => 'Année 2030-2031', 'is_active' => false]);
+
+        // Sans date de fin : 31 juillet 2031, clôture ouverte 60 jours avant.
+        $this->assertSame('2031-06-01', $year->closable_from);
+
+        $this->travelTo('2031-01-15');
+        $this->actingAs($user)->postJson("/api/academic-years/{$year->id}/close")
+            ->assertStatus(422)
+            ->assertJsonPath('message', "L'année 2030-2031 est encore en cours : la clôture sera possible à partir du 1 juin 2031.");
+        $this->assertNull($year->fresh()->closed_at);
+
+        $this->travelTo('2031-06-01');
+        $this->actingAs($user)->postJson("/api/academic-years/{$year->id}/close")->assertOk();
+
+        // Une date de fin renseignée prime sur le code.
+        $short = AcademicYear::create(['code' => '2032-2033', 'label' => 'Année courte', 'is_active' => false, 'date_end' => '2033-05-31']);
+        $this->assertSame('2033-04-01', $short->closable_from);
+    }
+
     public function test_closing_and_reopening_a_year_flips_its_state(): void
     {
         $user = $this->userWithPermissions();
         $year = AcademicYear::where('is_active', true)->firstOrFail();
+        $year->update(['date_end' => now()->addDays(10)->toDateString()]); // fin d'année toute proche
 
         $this->actingAs($user)->postJson("/api/academic-years/{$year->id}/close")->assertOk();
         $this->assertNotNull($year->fresh()->closed_at);

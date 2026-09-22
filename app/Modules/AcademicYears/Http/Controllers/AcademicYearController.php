@@ -71,6 +71,15 @@ class AcademicYearController extends Controller
     {
         abort_if($academicYear->closed_at, 422, 'Cette année est déjà clôturée.');
 
+        // Clôturer en cours d'année bloquerait la réinscription de tous les
+        // élèves qui n'ont pas encore tout payé — ce qui est normal en pleine année.
+        abort_unless(
+            $academicYear->isClosableNow(),
+            422,
+            "L'année {$academicYear->code} est encore en cours : la clôture sera possible à partir du "
+                .$academicYear->closableFrom()->locale('fr')->isoFormat('D MMMM YYYY').'.',
+        );
+
         DB::transaction(function () use ($academicYear) {
             $academicYear->update(['closed_at' => now(), 'closed_by_user_id' => request()->user()?->id]);
         });
