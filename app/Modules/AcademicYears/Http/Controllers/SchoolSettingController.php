@@ -5,6 +5,7 @@ namespace Modules\AcademicYears\Http\Controllers;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
+use Modules\AcademicYears\Models\SchoolLetterhead;
 use Modules\AcademicYears\Models\SchoolSetting;
 
 class SchoolSettingController extends Controller
@@ -33,8 +34,16 @@ class SchoolSettingController extends Controller
 
     public function letterhead()
     {
-        $path = $this->value('letterhead_path');
+        $letterhead = SchoolLetterhead::first();
 
+        if ($letterhead) {
+            return response(base64_decode($letterhead->data))
+                ->header('Content-Type', $letterhead->mime_type)
+                ->header('Cache-Control', 'private, max-age=3600');
+        }
+
+        // Image déposée avant le stockage en base, encore présente sur le disque.
+        $path = $this->value('letterhead_path');
         abort_unless($path && File::exists(public_path($path)), 404);
 
         return response()->file(public_path($path));
@@ -44,32 +53,37 @@ class SchoolSettingController extends Controller
     {
         $request->validate([
             'letterhead' => ['required', 'image', 'mimes:jpeg,jpg,png', 'max:2048'],
+        ], [
+            'letterhead.required' => 'Aucune image reçue.',
+            'letterhead.image' => "Le fichier n'est pas une image.",
+            'letterhead.mimes' => 'Formats acceptés : JPG ou PNG.',
+            'letterhead.max' => "L'image dépasse 2 Mo.",
         ]);
 
-        $oldPath = $this->value('letterhead_path');
-        $directory = public_path('uploads/letterheads');
-        File::ensureDirectoryExists($directory);
-
         $file = $request->file('letterhead');
-        $filename = 'letterhead-'.uniqid('', true).'.'.$file->extension();
-        $file->move($directory, $filename);
 
-        SchoolSetting::updateOrCreate(
-            ['school_id' => \App\Support\CurrentSchool::id(), 'setting_key' => 'letterhead_path'],
-            ['setting_value' => 'uploads/letterheads/'.$filename],
+        SchoolLetterhead::updateOrCreate(
+            ['school_id' => \App\Support\CurrentSchool::id()],
+            ['mime_type' => $file->getMimeType(), 'data' => base64_encode($file->get())],
         );
 
-        $this->deleteFile($oldPath);
+        $this->forgetDiskLetterhead();
 
         return response()->json($this->settings());
     }
 
     public function deleteLetterhead()
     {
-        $this->deleteFile($this->value('letterhead_path'));
-        SchoolSetting::where('school_id', \App\Support\CurrentSchool::id())->where('setting_key', 'letterhead_path')->delete();
+        SchoolLetterhead::where('school_id', \App\Support\CurrentSchool::id())->delete();
+        $this->forgetDiskLetterhead();
 
         return response()->json($this->settings());
+    }
+
+    private function forgetDiskLetterhead(): void
+    {
+        $this->deleteFile($this->value('letterhead_path'));
+        SchoolSetting::where('school_id', \App\Support\CurrentSchool::id())->where('setting_key', 'letterhead_path')->delete();
     }
 
     private function settings(): array
@@ -88,8 +102,18 @@ class SchoolSettingController extends Controller
             ->value('setting_value');
     }
 
+    /**
+     * L'URL change à chaque remplacement (paramètre v) : sans cela, le
+     * navigateur réafficherait l'ancienne image depuis son cache.
+     */
     private function letterheadUrl(): ?string
     {
+        $letterhead = SchoolLetterhead::first();
+
+        if ($letterhead) {
+            return url('/api/settings/letterhead').'?v='.$letterhead->updated_at?->timestamp;
+        }
+
         $path = $this->value('letterhead_path');
 
         return $path && File::exists(public_path($path)) ? url('/api/settings/letterhead') : null;
