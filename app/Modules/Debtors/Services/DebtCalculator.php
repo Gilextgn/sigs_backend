@@ -71,11 +71,19 @@ class DebtCalculator
             $theoretical = $this->theoreticalAmount($schoolClass, $trancheId);
             $paidAmount = (float) $trancheLines->sum('paid');
 
+            $outstanding = round(max($theoretical - $paidAmount, 0), 2);
+            $unpaidItems = $this->unpaidItems($studentPaid, $schoolClass, $feesByClass->get($classId, collect()));
+
             $results[$studentId] = [
                 'theoretical_amount' => round($theoretical, 2),
                 'paid_amount' => round($paidAmount, 2),
-                'outstanding_amount' => round(max($theoretical - $paidAmount, 0), 2),
-                'unpaid_items' => $this->unpaidItems($studentPaid, $schoolClass, $feesByClass->get($classId, collect())),
+                'outstanding_amount' => $outstanding,
+                'unpaid_items' => $unpaidItems,
+                // Part du reste-dû qu'aucune tranche ne porte : tranches de la
+                // classe inférieures à sa scolarité, ou supprimées après coup.
+                // Invisible dans la liste des lignes, et donc inencaissable :
+                // les écrans doivent le signaler au lieu d'annoncer « tout est réglé ».
+                'unlisted_amount' => round(max($outstanding - collect($unpaidItems)->where('type', 'TRANCHE')->sum('remaining'), 0), 2),
             ];
         }
 
