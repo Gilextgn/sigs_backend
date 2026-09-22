@@ -1,0 +1,22 @@
+# Garde le backend Render éveillé : sur l'offre gratuite, le service
+# s'endort après 15 min sans requête et le premier visiteur attend alors
+# jusqu'à une minute. Un appel léger toutes les 10 min l'en empêche.
+#
+# Limites : GitHub peut retarder les tâches planifiées de quelques minutes,
+# et les suspend après 60 jours sans commit sur le dépôt (un clic sur
+# « Enable workflow » les relance). Pour une garantie totale : offre payante
+# Render (Starter), qui ne s'endort jamais.
+name: Keep backend awake
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping API
+        run: curl --silent --show-error --fail --max-time 90 --retry 2 --retry-delay 10 https://sigs-backend-06tv.onrender.com/api/ping
