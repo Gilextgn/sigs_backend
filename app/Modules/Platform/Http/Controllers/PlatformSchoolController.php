@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Schema;
 use Modules\AcademicYears\Models\AcademicYear;
 use Modules\AcademicYears\Models\SchoolSetting;
 use Modules\Platform\Models\School;
+use Modules\Platform\Models\SchoolPayment;
 use Modules\Platform\Models\SchoolStatusEvent;
 use Modules\Users\Models\Role;
 
@@ -24,6 +25,15 @@ use Modules\Users\Models\Role;
  */
 class PlatformSchoolController extends Controller
 {
+    /** Coordonnées et tarif d'une école : ce qu'il faut pour la facturer et la relancer. */
+    private const CONTACT_RULES = [
+        'contact_name' => ['sometimes', 'nullable', 'string', 'max:180'],
+        'contact_phone' => ['sometimes', 'nullable', 'string', 'max:30', 'regex:/^\+?[0-9 .\-]{8,20}$/'],
+        'city' => ['sometimes', 'nullable', 'string', 'max:120'],
+        'notes' => ['sometimes', 'nullable', 'string', 'max:2000'],
+        'plan_amount' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:1000000000'],
+    ];
+
     public function index()
     {
         $schools = School::orderBy('name')->get();
@@ -36,11 +46,21 @@ class PlatformSchoolController extends Controller
 
         $adminsBySchool = $this->admins()->groupBy('school_id');
 
-        $rows = $schools->map(fn (School $school) => $this->row(
-            $school,
-            $usersBySchool->get($school->id),
-            $adminsBySchool->get($school->id)?->first(),
-        ));
+        $lastPayments = SchoolPayment::selectRaw('school_id, MAX(paid_at) as last_payment_at')
+            ->groupBy('school_id')
+            ->pluck('last_payment_at', 'school_id');
+
+        $lastReminders = SchoolStatusEvent::where('action', 'reminder_sent')
+            ->selectRaw('school_id, MAX(created_at) as last_reminded_at')
+            ->groupBy('school_id')
+            ->pluck('last_reminded_at', 'school_id');
+
+        $rows = $schools->map(fn (School $school) => [
+            ...$this->row($school, $usersBySchool->get($school->id), $adminsBySchool->get($school->id)?->first()),
+            // AAAA-MM-JJ quel que soit le moteur (SQLite renvoie aussi l'heure).
+            'last_payment_at' => $lastPayments->has($school->id) ? substr((string) $lastPayments->get($school->id), 0, 10) : null,
+            'last_reminded_at' => $lastReminders->get($school->id),
+        ]);
 
         return response()->json([
             'summary' => [
@@ -49,8 +69,22 @@ class PlatformSchoolController extends Controller
                 'overdue' => $rows->where('status', 'overdue')->count(),
                 'suspended' => $rows->where('status', 'suspended')->count(),
             ],
+            'revenue' => $this->revenue(),
             'schools' => $rows->values(),
         ]);
+    }
+
+    /** Encaissements de la plateforme : ce mois, le mois dernier, l'année civile. */
+    private function revenue(): array
+    {
+        $sum = fn ($from, $to) => (int) SchoolPayment::whereBetween('paid_at', [$from->toDateString(), $to->toDateString()])->sum('amount');
+        $now = now();
+
+        return [
+            'this_month' => $sum($now->copy()->startOfMonth(), $now->copy()->endOfMonth()),
+            'last_month' => $sum($now->copy()->subMonthNoOverflow()->startOfMonth(), $now->copy()->subMonthNoOverflow()->endOfMonth()),
+            'this_year' => $sum($now->copy()->startOfYear(), $now->copy()->endOfYear()),
+        ];
     }
 
     public function show(School $school)
@@ -61,8 +95,26 @@ class PlatformSchoolController extends Controller
 
         $admins = $this->admins($school->id);
 
+        $payments = $school->payments()->with('recordedBy:id,full_name')->get();
+
         return response()->json([
             ...$this->row($school, $usage, $admins->first()),
+            'notes' => $school->notes,
+            'last_payment_at' => $payments->first()?->paid_at?->toDateString(),
+            'last_reminded_at' => $school->events()->where('action', 'reminder_sent')->value('created_at'),
+            'total_paid' => (int) $payments->sum('amount'),
+            'payments' => $payments->take(50)->map(fn (SchoolPayment $payment) => [
+                'id' => $payment->id,
+                'amount' => $payment->amount,
+                'paid_at' => $payment->paid_at->toDateString(),
+                'months' => $payment->months,
+                'due_before' => $payment->due_before?->toDateString(),
+                'due_after' => $payment->due_after->toDateString(),
+                'method' => $payment->method,
+                'reference' => $payment->reference,
+                'note' => $payment->note,
+                'recorded_by' => $payment->recordedBy?->full_name,
+            ])->values(),
             'admins' => $admins->map(fn (User $admin) => [
                 'id' => $admin->id,
                 'full_name' => $admin->full_name,
@@ -90,6 +142,7 @@ class PlatformSchoolController extends Controller
             'subscription_due_at' => ['nullable', 'date'],
             'auto_suspend' => ['sometimes', 'boolean'],
             'grace_days' => ['sometimes', 'integer', 'min:0', 'max:90'],
+            ...self::CONTACT_RULES,
         ]);
 
         $generated = empty($data['admin_password']) ? $this->temporaryPassword() : null;
@@ -101,6 +154,7 @@ class PlatformSchoolController extends Controller
                 'subscription_due_at' => $data['subscription_due_at'] ?? null,
                 'auto_suspend' => $data['auto_suspend'] ?? false,
                 'grace_days' => $data['grace_days'] ?? 0,
+                ...array_intersect_key($data, self::CONTACT_RULES),
             ]);
 
             foreach ([
@@ -122,6 +176,8 @@ class PlatformSchoolController extends Controller
                 'email' => $data['admin_email'],
                 'password' => Hash::make($password),
                 'status' => 'active',
+                // Mot de passe connu de la plateforme : l'administrateur en choisit un à sa première connexion.
+                'must_change_password' => true,
             ]);
 
             $this->record($school, 'created', null, $request);
@@ -142,9 +198,17 @@ class PlatformSchoolController extends Controller
             'subscription_due_at' => ['sometimes', 'nullable', 'date'],
             'auto_suspend' => ['sometimes', 'boolean'],
             'grace_days' => ['sometimes', 'integer', 'min:0', 'max:90'],
+            ...self::CONTACT_RULES,
         ]);
 
+        $previousName = $school->name;
         $school->update($data);
+
+        // Seul le libellé de la plateforme change : le nom que l'école imprime
+        // sur ses reçus reste le sien (Paramètres de l'école).
+        if (isset($data['name']) && $data['name'] !== $previousName) {
+            $this->record($school, 'renamed', $previousName.' → '.$data['name'], $request);
+        }
 
         if (array_key_exists('subscription_due_at', $data)) {
             $this->record($school, 'due_date_changed', $data['subscription_due_at'] ?? 'aucune échéance', $request);
@@ -201,7 +265,7 @@ class PlatformSchoolController extends Controller
         abort_unless($admin, 404, "Aucun administrateur pour cette école.");
 
         $password = $this->temporaryPassword();
-        $admin->forceFill(['password' => Hash::make($password), 'status' => 'active'])->save();
+        $admin->forceFill(['password' => Hash::make($password), 'status' => 'active', 'must_change_password' => true])->save();
 
         // Les sessions ouvertes avec l'ancien mot de passe sont coupées.
         if (config('session.driver') === 'database' && Schema::hasTable('sessions')) {
@@ -211,6 +275,28 @@ class PlatformSchoolController extends Controller
         $this->record($school, 'password_reset', $admin->email, $request);
 
         return response()->json(['user_id' => $admin->id, 'email' => $admin->email, 'temporary_password' => $password]);
+    }
+
+    /** Corrige le nom ou l'e-mail de connexion d'un administrateur (faute de frappe, changement de directeur). */
+    public function updateAdmin(Request $request, School $school, int $userId)
+    {
+        $admin = $this->admins($school->id)->firstWhere('id', $userId);
+
+        abort_unless($admin, 404, "Cet administrateur n'appartient pas à cette école.");
+
+        $data = $request->validate([
+            'full_name' => ['sometimes', 'string', 'max:180'],
+            'email' => ['sometimes', 'email', 'max:180', 'unique:users,email,'.$admin->id],
+        ]);
+
+        $changes = collect($data)->filter(fn ($value, $key) => $admin->{$key} !== $value);
+
+        if ($changes->isNotEmpty()) {
+            $admin->forceFill($changes->all())->save();
+            $this->record($school, 'admin_updated', $changes->has('email') ? $admin->email : $admin->full_name, $request);
+        }
+
+        return $this->show($school->fresh());
     }
 
     /** @return \Illuminate\Support\Collection<int, User> */
@@ -239,6 +325,10 @@ class PlatformSchoolController extends Controller
             'users_count' => (int) ($usage->users_count ?? 0),
             'last_login_at' => $usage->last_login_at ?? null,
             'admin' => $admin ? ['id' => $admin->id, 'full_name' => $admin->full_name, 'email' => $admin->email] : null,
+            'contact_name' => $school->contact_name,
+            'contact_phone' => $school->contact_phone,
+            'city' => $school->city,
+            'plan_amount' => $school->plan_amount,
             'created_at' => $school->created_at,
         ];
     }

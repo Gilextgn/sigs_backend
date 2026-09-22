@@ -50,6 +50,7 @@ class SchoolAccess
             'role' => $user->role?->code,
             'permissions' => $user->permissions(),
             'school' => $school?->summary(),
+            'must_change_password' => (bool) $user->must_change_password,
         ];
     }
 }

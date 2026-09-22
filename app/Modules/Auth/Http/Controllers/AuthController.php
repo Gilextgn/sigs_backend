@@ -7,7 +7,10 @@ use App\Models\User;
 use App\Support\SchoolAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Modules\Auth\Http\Requests\LoginRequest;
 use Modules\Security\Models\AuditLog;
@@ -67,6 +70,50 @@ class AuthController extends Controller
         $user->forceFill(['last_login_at' => now()])->save();
 
         return response()->json(['user' => SchoolAccess::userPayload($user)]);
+    }
+
+    /**
+     * Changement de mot de passe par l'utilisateur lui-même (tout compte :
+     * école ou plateforme). L'ancien mot de passe est exigé ; les autres
+     * sessions ouvertes sont fermées, celle-ci reste active.
+     */
+    public function updatePassword(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:8', 'max:100', 'confirmed', 'different:current_password'],
+        ], [
+            'password.different' => "Le nouveau mot de passe doit être différent de l'actuel.",
+            'password.confirmed' => 'La confirmation ne correspond pas.',
+        ]);
+
+        if (! Hash::check($data['current_password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => 'Mot de passe actuel incorrect.',
+            ]);
+        }
+
+        $user->forceFill([
+            'password' => Hash::make($data['password']),
+            'must_change_password' => false,
+            'password_changed_at' => now(),
+        ])->save();
+
+        if (config('session.driver') === 'database' && Schema::hasTable('sessions') && $request->hasSession()) {
+            DB::table('sessions')
+                ->where('user_id', $user->id)
+                ->where('id', '!=', $request->session()->getId())
+                ->delete();
+        }
+
+        // Le journal d'audit appartient à une école : le propriétaire n'y figure pas.
+        if ($user->school_id !== null) {
+            AuditLog::record('auth.password_changed', 'User', (string) $user->id);
+        }
+
+        return response()->json(['user' => SchoolAccess::userPayload($user->fresh())]);
     }
 
     public function logout(Request $request)

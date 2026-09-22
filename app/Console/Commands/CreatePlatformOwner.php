@@ -16,7 +16,7 @@ use Modules\Users\Models\Role;
  */
 class CreatePlatformOwner extends Command
 {
-    protected $signature = 'platform:create-owner {email} {password} {--name=Propriétaire SIGS}';
+    protected $signature = 'platform:create-owner {email} {password} {--name=Propriétaire SIGS} {--reset-password : Réimpose le mot de passe fourni même s\'il a été changé dans la console}';
 
     protected $description = 'Crée le compte propriétaire de la plateforme (sans établissement)';
 
@@ -38,17 +38,52 @@ class CreatePlatformOwner extends Command
             return self::FAILURE;
         }
 
-        $attributes = [
-            'school_id' => null,
-            'role_id' => $role->id,
-            'full_name' => (string) $this->option('name'),
-            'password' => Hash::make((string) $this->argument('password')),
-            'status' => 'active',
-        ];
+        $reset = (bool) $this->option('reset-password');
 
-        $user ? $user->forceFill($attributes)->save() : User::create(['email' => $this->argument('email')] + $attributes);
+        // Le propriétaire a pu changer son e-mail dans la console : l'e-mail de
+        // l'environnement ne désigne plus personne, mais il ne faut pas pour
+        // autant créer un second compte propriétaire à chaque démarrage.
+        if (! $user) {
+            $user = User::whereNull('school_id')->where('role_id', $role->id)->orderBy('id')->first();
 
-        $this->info('Compte propriétaire prêt : '.$this->argument('email'));
+            if ($user && ! $reset) {
+                $this->info("Compte propriétaire déjà présent ({$user->email}) : rien à faire.");
+
+                return self::SUCCESS;
+            }
+        }
+
+        if (! $user) {
+            User::create([
+                'email' => $this->argument('email'),
+                'full_name' => (string) $this->option('name'),
+                'password' => Hash::make((string) $this->argument('password')),
+                'school_id' => null,
+                'role_id' => $role->id,
+                'status' => 'active',
+            ]);
+            $this->info('Compte propriétaire créé : '.$this->argument('email'));
+
+            return self::SUCCESS;
+        }
+
+        // Le mot de passe choisi dans la console n'est jamais écrasé par un simple
+        // redémarrage ; --reset-password (accès perdu) réimpose e-mail et mot de
+        // passe de l'environnement.
+        $keepPassword = $user->password_changed_at !== null && ! $reset;
+        $attributes = ['school_id' => null, 'role_id' => $role->id, 'status' => 'active'];
+
+        if (! $keepPassword) {
+            $attributes += [
+                'email' => $this->argument('email'),
+                'password' => Hash::make((string) $this->argument('password')),
+                'password_changed_at' => null,
+            ];
+        }
+
+        $user->forceFill($attributes)->save();
+
+        $this->info('Compte propriétaire prêt : '.$user->email.($keepPassword ? ' (mot de passe choisi dans la console conservé)' : ''));
 
         return self::SUCCESS;
     }

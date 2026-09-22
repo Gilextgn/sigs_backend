@@ -56,6 +56,16 @@ class EnforceSchoolAccess
             return response()->json(SchoolAccess::suspensionPayload($school), 403);
         }
 
+        // Mot de passe temporaire (connu de la plateforme) : rien d'autre tant
+        // que l'utilisateur n'a pas choisi le sien. /api/me reste ouvert pour
+        // que le frontend sache afficher l'écran de changement.
+        if ($user->must_change_password && ! $request->is('api/me')) {
+            return response()->json([
+                'code' => 'password_change_required',
+                'message' => 'Choisissez un nouveau mot de passe pour continuer.',
+            ], 403);
+        }
+
         return $next($request);
     }
 }

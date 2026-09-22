@@ -46,9 +46,15 @@ class MultiSchoolTest extends TestCase
             ...$extra,
         ])->assertCreated();
 
+        // L'administrateur a déjà remplacé son mot de passe temporaire : ces tests
+        // portent sur l'isolation et la suspension (le premier changement est
+        // couvert par PlatformAccountTest).
+        $admin = User::where('email', $email)->firstOrFail();
+        $admin->forceFill(['must_change_password' => false])->save();
+
         return [
             School::findOrFail($response->json('id')),
-            User::where('email', $email)->firstOrFail(),
+            $admin,
             $response->json('temporary_password'),
         ];
     }

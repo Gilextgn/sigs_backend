@@ -13,6 +13,7 @@ class School extends Model
     protected $fillable = [
         'name', 'suspended_at', 'suspension_reason',
         'subscription_due_at', 'auto_suspend', 'grace_days',
+        'contact_name', 'contact_phone', 'city', 'notes', 'plan_amount',
     ];
 
     protected function casts(): array
@@ -22,12 +23,18 @@ class School extends Model
             'subscription_due_at' => 'date',
             'auto_suspend' => 'boolean',
             'grace_days' => 'integer',
+            'plan_amount' => 'integer',
         ];
     }
 
     public function events()
     {
         return $this->hasMany(SchoolStatusEvent::class)->latest('id');
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(SchoolPayment::class)->orderByDesc('paid_at')->orderByDesc('id');
     }
 
     /** L'échéance est passée (l'école peut encore travailler pendant la période de grâce). */
