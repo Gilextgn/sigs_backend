@@ -5,6 +5,7 @@ namespace Modules\Payroll\Http\Controllers;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Modules\Payroll\Models\PayrollEntry;
+use Modules\Teachers\Models\Teacher;
 use Modules\Teachers\Models\TeachingSession;
 
 class PayrollController extends Controller
@@ -42,8 +43,13 @@ class PayrollController extends Controller
         return response()->json($this->calculateHourlyPay($data['teacher_id'], $data['period']));
     }
 
+    /**
+     * Base de paie du mois : salaire fixe pour un enseignant au mois, sinon
+     * les heures réellement faites d'après les présences.
+     */
     private function calculateHourlyPay(int $teacherId, string $period): array
     {
+        $teacher = Teacher::find($teacherId);
         $startDate = $period.'-01';
         $endDate = date('Y-m-t', strtotime($startDate));
 
@@ -90,10 +96,16 @@ class PayrollController extends Controller
             $amount += ($paidMinutes / 60) * $hourlyRate;
         }
 
+        $paidMonthly = $teacher && ! $teacher->isPaidHourly();
+
         return [
+            'pay_mode' => $paidMonthly ? 'monthly' : 'hourly',
             'worked_minutes' => (int) $minutes,
             'worked_hours' => round($minutes / 60, 2),
-            'amount' => round($amount, 2),
+            // Les heures restent affichées pour un salaire fixe : elles disent
+            // ce qui a été fait, sans entrer dans le montant.
+            'hourly_amount' => round($amount, 2),
+            'amount' => $paidMonthly ? round((float) $teacher->monthly_salary, 2) : round($amount, 2),
         ];
     }
 
