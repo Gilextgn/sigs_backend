@@ -11,6 +11,21 @@ class UpdateStudentRequest extends FormRequest
         return $this->user()?->hasPermission('students.update') ?? false;
     }
 
+    /** Numéros saisis « 01 66 18 98 77 » : on ne garde que les chiffres (10 attendus). */
+    protected function prepareForValidation(): void
+    {
+        $guardian = $this->input('guardian');
+        if (! is_array($guardian)) {
+            return;
+        }
+        foreach (['phone', 'whatsapp'] as $field) {
+            if (isset($guardian[$field]) && is_string($guardian[$field])) {
+                $guardian[$field] = preg_replace('/\D/', '', $guardian[$field]) ?: null;
+            }
+        }
+        $this->merge(['guardian' => $guardian]);
+    }
+
     public function rules(): array
     {
         return [
@@ -23,9 +38,17 @@ class UpdateStudentRequest extends FormRequest
             'status' => ['sometimes', 'in:active,transferred,graduated,archived'],
             // Coordonnées du tuteur (partagées par ses autres enfants inscrits).
             'guardian' => ['sometimes', 'array'],
-            'guardian.phone' => ['sometimes', 'string', 'max:40'],
+            'guardian.phone' => ['sometimes', 'digits:10'],
             'guardian.email' => ['nullable', 'email', 'max:180'],
-            'guardian.whatsapp' => ['nullable', 'string', 'max:40', 'regex:/^[+0-9 ().-]{8,}$/'],
+            'guardian.whatsapp' => ['nullable', 'digits:10'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'guardian.phone.digits' => 'Le téléphone du tuteur doit comporter exactement 10 chiffres.',
+            'guardian.whatsapp.digits' => 'Le numéro WhatsApp doit comporter exactement 10 chiffres.',
         ];
     }
 }

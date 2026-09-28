@@ -10,12 +10,25 @@ class ScheduleController extends Controller
 {
     public function index(Request $request)
     {
-        return ClassSchedule::with(['schoolClass:id,label', 'subject:id,label', 'assignment.teacher:id,full_name'])
+        $rows = ClassSchedule::with(['schoolClass:id,label', 'subject:id,label', 'assignment.teacher:id,full_name'])
             ->when($request->class_id, fn ($query, $id) => $query->where('class_id', $id))
             // Emploi du temps d'un enseignant : ses cours dans toutes ses classes.
             ->when($request->teacher_id, fn ($query, $id) => $query->whereHas('assignment', fn ($q) => $q->where('teacher_id', $id)))
             ->where('is_active', true)
             ->orderBy('day_of_week')->orderBy('starts_at')->get();
+
+        // Créneaux saisis avant le contrôle des chevauchements : on les signale
+        // pour que le directeur les corrige.
+        $all = ClassSchedule::with('assignment:id,teacher_id')->where('is_active', true)->get();
+        foreach ($rows as $row) {
+            $clash = $all->first(fn (ClassSchedule $other) => $other->id !== $row->id
+                && $other->day_of_week === $row->day_of_week
+                && $other->starts_at < $row->ends_at && $other->ends_at > $row->starts_at
+                && ($other->class_id === $row->class_id || ($row->assignment && $other->assignment?->teacher_id === $row->assignment->teacher_id)));
+            $row->setAttribute('conflict', $clash === null ? null : ($clash->class_id === $row->class_id ? 'La classe a un autre cours à cette heure.' : 'L\'enseignant a un autre cours à cette heure.'));
+        }
+
+        return $rows;
     }
 
     public function store(Request $request)
@@ -47,7 +60,12 @@ class ScheduleController extends Controller
             'ends_at' => ['sometimes', 'date_format:H:i', 'after:starts_at'],
             'room' => ['nullable', 'string', 'max:80'],
             'is_active' => ['boolean'],
+            // Changer d'enseignant : une autre affectation de la même classe et matière.
+            'teacher_assignment_id' => ['sometimes', \App\Support\SchoolRule::exists('teacher_assignments')],
         ]);
+
+        $assignment = isset($data['teacher_assignment_id']) ? \Modules\Teachers\Models\TeacherAssignment::findOrFail($data['teacher_assignment_id']) : $schedule->assignment;
+        abort_if($assignment && ($assignment->class_id !== $schedule->class_id || $assignment->subject_id !== $schedule->subject_id), 422, 'Cette affectation ne correspond pas à la classe et à la matière du créneau.');
 
         // Déplacer un créneau peut créer le même chevauchement qu'en créer un.
         $merged = [...$schedule->only(['day_of_week', 'starts_at', 'ends_at']), ...$data];
@@ -55,7 +73,7 @@ class ScheduleController extends Controller
         if ($data['is_active'] ?? $schedule->is_active) {
             $this->assertFree(
                 $schedule->class_id,
-                $schedule->assignment?->teacher_id,
+                $assignment?->teacher_id,
                 (int) $merged['day_of_week'],
                 substr((string) $merged['starts_at'], 0, 5),
                 substr((string) $merged['ends_at'], 0, 5),
@@ -65,7 +83,7 @@ class ScheduleController extends Controller
 
         $schedule->update($data);
 
-        return $schedule->fresh();
+        return $schedule->fresh(['schoolClass:id,label', 'subject:id,label', 'assignment.teacher:id,full_name']);
     }
 
     /**

@@ -68,7 +68,7 @@ class PayrollController extends Controller
         foreach ($sessions as $session) {
             $attendance = $session->attendance;
             $plannedMinutes = (int) $session->planned_minutes;
-            $hourlyRate = (float) ($session->assignment?->hourly_rate ?? 0);
+            $hourlyRate = $this->rateFor($session, $teacher);
 
             if (! $attendance) {
                 continue;
@@ -87,8 +87,9 @@ class PayrollController extends Controller
 
             $absenceMinutes = min((int) ($attendance->absence_minutes ?? 0), $plannedMinutes);
 
+            // Retard : les minutes manquées sont déduites.
             $paidMinutes = match ($attendance->status) {
-                'present', 'justified' => max(0, $plannedMinutes - $absenceMinutes),
+                'present', 'justified', 'late' => max(0, $plannedMinutes - $absenceMinutes),
                 default => 0,
             };
 
@@ -126,8 +127,9 @@ class PayrollController extends Controller
                 $absenceMinutes = (int) ($attendance?->absence_minutes ?? 0);
 
                 $paidMinutes = match ($attendance?->status) {
-                    'present', 'justified' => max(0, $plannedMinutes - $absenceMinutes),
-                    'replaced' => $plannedMinutes,
+                    'present', 'justified', 'late' => max(0, $plannedMinutes - $absenceMinutes),
+                    // Remplacé : c'est le remplaçant qui est payé, pas le titulaire.
+                    'replaced' => 0,
                     default => 0,
                 };
 
@@ -155,6 +157,66 @@ class PayrollController extends Controller
             'paid_at' => $payrollEntry->paid_at,
             'net_amount' => $payrollEntry->netAmount(),
             'sessions' => $sessions,
+        ]);
+    }
+
+    /**
+     * Tarif d'une séance : celui de l'affectation, sinon celui saisi sur la fiche
+     * de l'enseignant payé (le remplaçant est payé à son propre tarif).
+     */
+    private function rateFor(TeachingSession $session, ?Teacher $teacher): float
+    {
+        if ($teacher && (int) $session->assignment?->teacher_id !== $teacher->id) {
+            return (float) ($teacher->hourly_rate ?: $session->assignment?->hourly_rate ?: 0);
+        }
+
+        return (float) ($session->assignment?->hourly_rate ?: $teacher?->hourly_rate ?: 0);
+    }
+
+    /**
+     * Récapitulatif d'une année scolaire pour un enseignant (septembre → août) :
+     * heures faites et paie de chaque mois, totaux. Chaque mois repart de zéro.
+     */
+    public function annualSummary(Request $request)
+    {
+        $data = $request->validate([
+            'teacher_id' => ['required', \App\Support\SchoolRule::exists('teachers')],
+            'start_year' => ['required', 'integer', 'between:2000,2100'],
+        ]);
+
+        $teacher = Teacher::findOrFail($data['teacher_id']);
+        $start = (int) $data['start_year'];
+        $entries = PayrollEntry::where('teacher_id', $teacher->id)
+            ->whereBetween('period', [sprintf('%d-09', $start), sprintf('%d-08', $start + 1)])
+            ->get()->keyBy('period');
+
+        $months = collect([9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8])->map(function (int $month) use ($start, $teacher, $entries) {
+            $period = sprintf('%d-%02d', $month >= 9 ? $start : $start + 1, $month);
+            $worked = $this->calculateHourlyPay($teacher->id, $period);
+            $entry = $entries->get($period);
+
+            return [
+                'period' => $period,
+                'worked_hours' => $worked['worked_hours'],
+                'base_amount' => $entry ? (float) $entry->base_amount : null,
+                'bonus_amount' => $entry ? (float) $entry->bonus_amount : null,
+                'deduction_amount' => $entry ? (float) $entry->deduction_amount : null,
+                'net_amount' => $entry?->netAmount(),
+                'status' => $entry?->status ?? 'not_generated',
+                'paid_at' => $entry?->paid_at?->toDateString(),
+            ];
+        })->filter(fn ($row) => $row['worked_hours'] > 0 || $row['net_amount'] !== null)->values();
+
+        return response()->json([
+            'teacher' => ['id' => $teacher->id, 'full_name' => $teacher->full_name, 'pay_mode' => $teacher->pay_mode ?? 'hourly'],
+            'school_year' => $start.'-'.($start + 1),
+            'months' => $months,
+            'totals' => [
+                'worked_hours' => round($months->sum('worked_hours'), 2),
+                'net_amount' => round($months->sum('net_amount'), 2),
+                'paid_amount' => round($months->where('status', 'paid')->sum('net_amount'), 2),
+                'pending_amount' => round($months->where('status', 'pending')->sum('net_amount'), 2),
+            ],
         ]);
     }
 

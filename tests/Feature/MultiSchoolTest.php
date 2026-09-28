@@ -86,7 +86,7 @@ class MultiSchoolTest extends TestCase
             'class_id' => $classId,
             'first_name' => 'Awa',
             'last_name' => 'Test',
-            'guardian' => ['full_name' => 'Tuteur', 'relationship_label' => 'Mère', 'phone' => '97000000'],
+            'guardian' => ['full_name' => 'Tuteur', 'relationship_label' => 'Mère', 'phone' => '0197000000'],
         ];
     }
 

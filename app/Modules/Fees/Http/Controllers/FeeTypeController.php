@@ -56,6 +56,10 @@ class FeeTypeController extends Controller
 
     public function destroy(FeeType $feeType)
     {
+        // Un frais déjà encaissé figure sur des reçus : le supprimer les casserait.
+        $paid = \Modules\Payments\Models\PaymentItem::where('fee_type_id', $feeType->id)->count();
+        abort_if($paid > 0, 422, "Impossible de supprimer « {$feeType->label} » : il a déjà été encaissé {$paid} fois et figure sur des reçus. Retirez-lui ses classes (ou passez-le « sur inscription » sans inscrit) pour qu'il ne soit plus demandé.");
+
         $feeType->delete();
 
         return response()->noContent();

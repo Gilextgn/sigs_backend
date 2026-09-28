@@ -5,6 +5,7 @@ use Modules\Payroll\Http\Controllers\PayrollController;
 
 Route::middleware('auth:sanctum')->prefix('payroll')->group(function () {
     Route::get('/', [PayrollController::class, 'index'])->middleware('permission:teachers.view');
+    Route::get('/annual-summary', [PayrollController::class, 'annualSummary'])->middleware('permission:teachers.view');
     Route::get('/estimate', [PayrollController::class, 'estimate'])->middleware('permission:teachers.view');
     Route::get('/{payrollEntry}', [PayrollController::class, 'show'])->middleware('permission:teachers.view');
 

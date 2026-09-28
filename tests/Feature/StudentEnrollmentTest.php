@@ -23,7 +23,7 @@ class StudentEnrollmentTest extends TestCase
             'guardian' => [
                 'full_name' => 'Bernard Amoussouga',
                 'relationship_label' => 'Père',
-                'phone' => '66552214',
+                'phone' => '0166552214',
                 'address' => 'Womey',
             ],
         ], $overrides);

@@ -25,9 +25,14 @@ class TeacherAssignmentController extends Controller
             'teacher_id' => ['required', \App\Support\SchoolRule::exists('teachers')],
             'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
             'subject_id' => ['required', \App\Support\SchoolRule::exists('subjects')],
-            'hourly_rate' => ['required', 'numeric', 'min:0.01'],
+            // Vide : le tarif horaire saisi sur la fiche de l'enseignant (0 pour un salaire fixe).
+            'hourly_rate' => ['nullable', 'numeric', 'min:0'],
             'weekly_hours' => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        $teacher = \Modules\Teachers\Models\Teacher::findOrFail($data['teacher_id']);
+        $data['hourly_rate'] = $data['hourly_rate'] ?? ($teacher->isPaidHourly() ? (float) $teacher->hourly_rate : 0);
+        abort_if($teacher->isPaidHourly() && $data['hourly_rate'] <= 0, 422, 'Indiquez le tarif horaire de cet enseignant (sur sa fiche ou ici).');
 
         $assignment = TeacherAssignment::firstOrCreate(
             [
@@ -45,7 +50,7 @@ class TeacherAssignmentController extends Controller
     public function update(Request $request, TeacherAssignment $teacherAssignment)
     {
         $data = $request->validate([
-            'hourly_rate' => ['sometimes', 'numeric', 'min:0.01'],
+            'hourly_rate' => ['sometimes', 'numeric', 'min:0'],
             'weekly_hours' => ['nullable', 'numeric', 'min:0'],
             'is_active' => ['boolean'],
         ]);

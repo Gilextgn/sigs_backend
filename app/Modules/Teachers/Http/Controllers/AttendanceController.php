@@ -87,24 +87,31 @@ class AttendanceController extends Controller
         $data = $request->validate([
             'teaching_session_id' => ['required', \App\Support\SchoolRule::exists('teaching_sessions')],
             'teacher_id' => ['required', \App\Support\SchoolRule::exists('teachers')],
-            'status' => ['required', 'in:present,absent,justified,replaced'],
+            // present : cours fait ; late : fait avec du retard (minutes déduites) ;
+            // absent : non fait, non payé ; justified : absence excusée ; replaced :
+            // un autre enseignant a fait le cours, c'est lui qui est payé.
+            'status' => ['required', 'in:present,late,absent,justified,replaced'],
             'absence_minutes' => ['nullable', 'integer', 'min:0'],
-            'reason' => ['nullable', 'string'],
-            'replacement_teacher_id' => ['nullable', \App\Support\SchoolRule::exists('teachers')],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'replacement_teacher_id' => ['required_if:status,replaced', 'nullable', \App\Support\SchoolRule::exists('teachers')],
         ]);
 
         $session = TeachingSession::findOrFail($data['teaching_session_id']);
         abort_unless($session->assignment->teacher_id === (int) $data['teacher_id'], 422, 'Cet enseignant ne correspond pas à la séance.');
+        abort_if($data['status'] === 'late' && (int) ($data['absence_minutes'] ?? 0) <= 0, 422, 'Indiquez le nombre de minutes de retard.');
+        abort_if($data['status'] === 'replaced' && (int) $data['replacement_teacher_id'] === (int) $data['teacher_id'], 422, 'Le remplaçant doit être un autre enseignant.');
 
-        $absenceMinutes = min((int) ($data['absence_minutes'] ?? 0), $session->planned_minutes);
-
-        if (($data['status'] ?? null) === 'replaced' && ! empty($data['replacement_teacher_id'])) {
-            $realizedMinutes = $session->planned_minutes;
-        } elseif (in_array($data['status'], ['present', 'justified'], true)) {
-            $realizedMinutes = max(0, $session->planned_minutes - $absenceMinutes);
-        } else {
-            $realizedMinutes = 0;
+        // Les minutes ne comptent que pour un retard : ailleurs elles induiraient en erreur.
+        $data['absence_minutes'] = $data['status'] === 'late' ? min((int) $data['absence_minutes'], $session->planned_minutes) : 0;
+        if ($data['status'] !== 'replaced') {
+            $data['replacement_teacher_id'] = null;
         }
+
+        $realizedMinutes = match ($data['status']) {
+            'present', 'justified', 'replaced' => $session->planned_minutes,
+            'late' => max(0, $session->planned_minutes - $data['absence_minutes']),
+            default => 0,
+        };
 
         $session->update([
             'realized_minutes' => $realizedMinutes,
