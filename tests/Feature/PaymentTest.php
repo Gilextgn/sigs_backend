@@ -178,7 +178,7 @@ class PaymentTest extends TestCase
             ]],
         ])->assertCreated()->json('id');
 
-        $this->actingAs($user)->deleteJson("/api/payments/{$paymentId}")->assertNoContent();
+        $this->actingAs($user)->deleteJson("/api/payments/{$paymentId}", ['reason' => 'Erreur de saisie'])->assertNoContent();
 
         // La tranche est de nouveau entièrement encaissable après annulation.
         $this->actingAs($user)->postJson('/api/payments', [
@@ -263,5 +263,90 @@ class PaymentTest extends TestCase
         $this->assertSame($summary->json('debtors'), $top->json('debtors_count'));
         $this->assertCount(1, $top->json('items'));
         $this->assertSame('partial', $top->json('items.0.unpaid_items.0.status'));
+    }
+
+    private function payOneInstallment(User $user, Student $student, SchoolClass $class)
+    {
+        $installment = TuitionInstallment::create(['class_id' => $class->id, 'label' => '1ère tranche', 'amount' => 100000]);
+
+        return $this->actingAs($user)->postJson('/api/payments', [
+            'student_id' => $student->id,
+            'items' => [['item_type' => 'TRANCHE', 'tuition_installment_id' => $installment->id, 'paid_amount' => 40000]],
+        ])->assertCreated();
+    }
+
+    public function test_the_receipt_is_emailed_to_the_guardian_and_traced(): void
+    {
+        config(['mail.default' => 'array']);
+        $user = $this->userWithPermissions();
+        $class = $this->createSchoolClass(300000);
+        $student = $this->createStudent($class);
+        $student->guardian->update(['email' => 'parent@example.com']);
+
+        $payment = $this->payOneInstallment($user, $student, $class);
+
+        $messages = app('mailer')->getSymfonyTransport()->messages();
+        $this->assertCount(1, $messages);
+        $this->assertStringContainsString($payment->json('reference_code'), $messages[0]->getOriginalMessage()->getSubject());
+
+        $this->assertDatabaseHas('receipt_deliveries', [
+            'payment_id' => $payment->json('id'),
+            'channel' => 'email',
+            'status' => 'sent',
+            'recipient' => 'pa***@example.com',
+        ]);
+
+        $this->actingAs($user)->getJson('/api/payments/'.$payment->json('id'))
+            ->assertOk()
+            ->assertJsonPath('deliveries.0.channel', 'email')
+            ->assertJsonPath('receipt_contacts.email', 'parent@example.com');
+    }
+
+    public function test_no_delivery_is_attempted_without_guardian_contacts(): void
+    {
+        $user = $this->userWithPermissions();
+        $class = $this->createSchoolClass(300000);
+        $student = $this->createStudent($class);
+
+        $payment = $this->payOneInstallment($user, $student, $class);
+
+        $this->assertDatabaseMissing('receipt_deliveries', ['payment_id' => $payment->json('id')]);
+        $this->actingAs($user)->postJson('/api/payments/'.$payment->json('id').'/send-receipt')->assertStatus(422);
+    }
+
+    public function test_anyone_can_verify_a_receipt_and_see_its_cancellation(): void
+    {
+        $user = $this->userWithPermissions();
+        $class = $this->createSchoolClass(300000);
+        $student = $this->createStudent($class);
+        $payment = $this->payOneInstallment($user, $student, $class);
+        $token = $payment->json('verification_token');
+
+        $this->assertSame(40, strlen($token));
+        // Le jeton n'apparaît pas dans la liste des paiements.
+        $this->actingAs($user)->getJson('/api/payments')->assertJsonMissingPath('data.0.verification_token');
+
+        $this->app['auth']->forgetGuards();
+        $this->getJson("/api/receipts/verify/{$token}")
+            ->assertOk()
+            ->assertJsonPath('status', 'valid')
+            ->assertJsonPath('reference_code', $payment->json('reference_code'))
+            ->assertJsonPath('student', 'Hornel A.');
+
+        $this->actingAs($user)->deleteJson('/api/payments/'.$payment->json('id'), ['reason' => 'Erreur de saisie'])->assertNoContent();
+        $this->app['auth']->forgetGuards();
+        $this->getJson("/api/receipts/verify/{$token}")->assertJsonPath('status', 'cancelled');
+
+        $this->getJson('/api/receipts/verify/'.str_repeat('x', 40))->assertNotFound();
+    }
+
+    public function test_whatsapp_numbers_are_normalised_with_the_country_code(): void
+    {
+        $normalize = [\Modules\Payments\Services\ReceiptNotifier::class, 'normalizePhone'];
+
+        $this->assertSame('2290191489743', $normalize('01 91 48 97 43'));
+        $this->assertSame('2290191489743', $normalize('+229 01 91 48 97 43'));
+        $this->assertSame('2290191489743', $normalize('00229 0191489743'));
+        $this->assertSame('2290191489743', $normalize('2290191489743'));
     }
 }

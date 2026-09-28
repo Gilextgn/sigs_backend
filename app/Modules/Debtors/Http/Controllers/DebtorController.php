@@ -52,8 +52,9 @@ class DebtorController extends Controller
             'full_name' => $student->fullName(),
             'class' => $student->schoolClass?->label,
             ...$debts[$student->id],
-        ])->filter(fn ($row) => $row['outstanding_amount'] > 0)
-            ->sortByDesc('outstanding_amount')
+        ])->filter(fn ($row) => $row['outstanding_amount'] > 0 || (! $trancheId && $row['fees_outstanding'] > 0))
+            // Un élève à jour de scolarité mais qui doit la cantine reste un débiteur.
+            ->sortByDesc(fn ($row) => $row['outstanding_amount'] + ($trancheId ? 0 : $row['fees_outstanding']))
             ->values();
     }
 }

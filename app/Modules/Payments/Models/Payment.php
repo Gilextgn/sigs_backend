@@ -14,8 +14,11 @@ class Payment extends Model
 
     protected $fillable = [
         'school_id', 'academic_year_id', 'reference_code', 'student_id',
-        'cashier_user_id', 'payment_date', 'total_paid_amount',
+        'cashier_user_id', 'payment_date', 'total_paid_amount', 'verification_token',
     ];
+
+    // Ne sert qu'à la vérification publique (QR code du reçu) : exposé seulement par show().
+    protected $hidden = ['verification_token'];
 
     protected function casts(): array
     {
@@ -39,5 +42,10 @@ class Payment extends Model
     public function items()
     {
         return $this->hasMany(PaymentItem::class);
+    }
+
+    public function deliveries()
+    {
+        return $this->hasMany(ReceiptDelivery::class)->orderByDesc('id');
     }
 }

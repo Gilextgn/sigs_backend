@@ -11,7 +11,7 @@ class PaymentItem extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'payment_id', 'item_type', 'tuition_installment_id', 'fee_type_id',
+        'payment_id', 'item_type', 'tuition_installment_id', 'fee_type_id', 'period_month',
         'expected_amount', 'paid_amount',
     ];
 
@@ -41,8 +41,13 @@ class PaymentItem extends Model
 
     public function label(): string
     {
-        return $this->item_type === 'TRANCHE'
-            ? $this->tuitionInstallment?->label ?? 'Tranche'
-            : $this->feeType?->label ?? 'Frais';
+        if ($this->item_type === 'TRANCHE') {
+            return $this->tuitionInstallment?->label ?? 'Tranche';
+        }
+
+        $label = $this->feeType?->label ?? 'Frais';
+
+        // Frais mensuel : « Cantine — octobre ».
+        return $this->period_month ? $label.' — '.FeeType::monthLabel((int) $this->period_month) : $label;
     }
 }

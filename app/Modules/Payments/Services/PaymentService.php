@@ -20,13 +20,19 @@ class PaymentService
 {
     public function create(int $studentId, array $items, int $cashierUserId): Payment
     {
+        abort_if(
+            \Modules\Payments\Models\CashClosing::isClosed($cashierUserId, now()->toDateString()),
+            422,
+            "Votre caisse du jour est clôturée : demandez à l'administrateur de la rouvrir pour encaisser.",
+        );
+
         return DB::transaction(function () use ($studentId, $items, $cashierUserId) {
             $enrichedItems = [];
             $total = 0.0;
             $itemKeys = [];
 
             foreach ($items as $item) {
-                $itemKey = $item['item_type'].'-'.($item['tuition_installment_id'] ?? $item['fee_type_id'] ?? '');
+                $itemKey = $item['item_type'].'-'.($item['tuition_installment_id'] ?? $item['fee_type_id'] ?? '').'-'.($item['period_month'] ?? '');
                 if (isset($itemKeys[$itemKey])) {
                     throw ValidationException::withMessages([
                         'items' => 'Une même ligne ne peut pas être encaissée deux fois dans le même paiement.',
@@ -40,6 +46,7 @@ class PaymentService
 
             $payment = Payment::create([
                 'reference_code' => $this->generateReference(),
+                'verification_token' => \Illuminate\Support\Str::random(40),
                 'student_id' => $studentId,
                 // L'année du paiement suit l'inscription courante de l'élève payeur : c'est ce qui
                 // permet de calculer un reste-dû par année (clôture, blocage de réinscription) sans
@@ -76,7 +83,7 @@ class PaymentService
         if ($item['item_type'] === 'TRANCHE') {
             $installment = TuitionInstallment::lockForUpdate()->findOrFail($item['tuition_installment_id']);
             $student = \Modules\Students\Models\Student::findOrFail($studentId);
-            abort_unless($student->class_id === $installment->class_id, 422, 'Cette tranche n’appartient pas à la classe de l’élève.');
+            abort_unless($student->schoolClass?->pricing_class_id === $installment->class_id, 422, 'Cette tranche n’appartient pas à la classe de l’élève.');
             $referenceAmount = (float) $installment->amount;
 
             $alreadyPaid = (float) PaymentItem::query()
@@ -90,11 +97,23 @@ class PaymentService
         } else {
             $fee = FeeType::lockForUpdate()->findOrFail($item['fee_type_id']);
             $referenceAmount = (float) $fee->amount;
+            $month = $item['period_month'] ?? null;
 
+            if ($fee->isMonthly()) {
+                abort_unless($month && in_array((int) $month, $fee->billedMonths(), true), 422, "Choisissez un mois facturé pour « {$fee->label} ».");
+            } else {
+                $month = null;
+            }
+
+            // Un frais mensuel se règle mois par mois et année par année : octobre
+            // payé l'an dernier ne couvre pas octobre de cette année.
+            $yearId = \Modules\Students\Models\Student::findOrFail($studentId)->academic_year_id;
             $alreadyPaid = (float) PaymentItem::query()
-                ->whereHas('payment', fn ($q) => $q->where('student_id', $studentId)->whereNull('deleted_at'))
+                ->whereHas('payment', fn ($q) => $q->where('student_id', $studentId)->whereNull('deleted_at')
+                    ->when($month, fn ($q) => $q->where('academic_year_id', $yearId)))
                 ->where('item_type', 'AUTRE_FRAIS')
                 ->where('fee_type_id', $fee->id)
+                ->when($month, fn ($q) => $q->where('period_month', $month))
                 ->sum('paid_amount');
 
             $key = 'fee_type_id';
@@ -104,7 +123,9 @@ class PaymentService
         $paidAmount = (float) $item['paid_amount'];
 
         if (($alreadyPaid + $paidAmount) > $referenceAmount) {
-            $itemLabel = $item['item_type'] === 'TRANCHE' ? $installment->label : $fee->label;
+            $itemLabel = $item['item_type'] === 'TRANCHE'
+                ? $installment->label
+                : $fee->label.($month ? ' — '.FeeType::monthLabel((int) $month) : '');
             $remaining = max($referenceAmount - $alreadyPaid, 0);
             throw ValidationException::withMessages([
                 'items' => "La ligne « {$itemLabel} » dépasse le reste autorisé de ".number_format($remaining, 2, ',', ' ')." XOF.",
@@ -115,6 +136,7 @@ class PaymentService
             'item_type' => $item['item_type'],
             'tuition_installment_id' => $key === 'tuition_installment_id' ? $refId : null,
             'fee_type_id' => $key === 'fee_type_id' ? $refId : null,
+            'period_month' => $key === 'fee_type_id' ? $month : null,
             'expected_amount' => $referenceAmount,
             'paid_amount' => $paidAmount,
         ];

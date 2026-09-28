@@ -32,6 +32,8 @@ class StudentResource extends JsonResource
                 'full_name' => $this->guardian->full_name,
                 'relationship_label' => $this->guardian->relationship_label,
                 'phone' => $this->guardian->phone,
+                'email' => $this->guardian->email,
+                'whatsapp' => $this->guardian->whatsapp,
             ]),
             'created_at' => $this->created_at,
         ];

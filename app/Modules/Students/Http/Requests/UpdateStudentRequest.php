@@ -21,6 +21,11 @@ class UpdateStudentRequest extends FormRequest
             'birth_date' => ['nullable', 'date', 'before:today'],
             'gender' => ['nullable', 'in:F,M'],
             'status' => ['sometimes', 'in:active,transferred,graduated,archived'],
+            // Coordonnées du tuteur (partagées par ses autres enfants inscrits).
+            'guardian' => ['sometimes', 'array'],
+            'guardian.phone' => ['sometimes', 'string', 'max:40'],
+            'guardian.email' => ['nullable', 'email', 'max:180'],
+            'guardian.whatsapp' => ['nullable', 'string', 'max:40', 'regex:/^[+0-9 ().-]{8,}$/'],
         ];
     }
 }

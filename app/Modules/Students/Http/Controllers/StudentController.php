@@ -94,6 +94,15 @@ class StudentController extends Controller
         $data = $request->validated();
 
         DB::transaction(function () use ($data, $student) {
+            if (isset($data['guardian']) && $student->guardian) {
+                $student->guardian->update($data['guardian']);
+                \Modules\Security\Models\AuditLog::record('guardian.contacts_updated', 'Guardian', (string) $student->guardian->id, [
+                    'student_id' => $student->id,
+                    'fields' => array_keys($data['guardian']),
+                ]);
+            }
+            unset($data['guardian']);
+
             $student->update($data);
 
             // Corrige la classe de l'année en cours (ex. erreur de saisie) sans créer de nouvel

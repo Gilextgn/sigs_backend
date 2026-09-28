@@ -31,14 +31,14 @@ class PaymentLineBalances
             ->whereIn('payments.student_id', $payments->pluck('student_id')->unique()->values()->all())
             ->whereNull('payments.deleted_at')
             ->orderBy('payments.id')
-            ->get(['payments.id as payment_id', 'payments.student_id', 'payment_items.item_type', 'payment_items.tuition_installment_id', 'payment_items.fee_type_id', 'payment_items.paid_amount'])
-            ->groupBy(fn ($row) => self::lineKey($row->student_id, $row->item_type, $row->tuition_installment_id, $row->fee_type_id));
+            ->get(['payments.id as payment_id', 'payments.student_id', 'payment_items.item_type', 'payment_items.tuition_installment_id', 'payment_items.fee_type_id', 'payment_items.period_month', 'payments.academic_year_id', 'payment_items.paid_amount'])
+            ->groupBy(fn ($row) => self::lineKey($row->student_id, $row->item_type, $row->tuition_installment_id, $row->fee_type_id, $row->period_month, $row->academic_year_id));
 
         foreach ($payments as $payment) {
             $isPartial = false;
 
             foreach ($payment->items as $item) {
-                $lines = $history->get(self::lineKey($payment->student_id, $item->item_type, $item->tuition_installment_id, $item->fee_type_id), collect());
+                $lines = $history->get(self::lineKey($payment->student_id, $item->item_type, $item->tuition_installment_id, $item->fee_type_id, $item->period_month, $payment->academic_year_id), collect());
                 $paidToDate = (float) $lines->where('payment_id', '<=', $payment->id)->sum('paid_amount');
                 $remaining = round(max((float) $item->expected_amount - $paidToDate, 0), 2);
 
@@ -54,8 +54,9 @@ class PaymentLineBalances
         }
     }
 
-    private static function lineKey($studentId, $type, $installmentId, $feeTypeId): string
+    // Une ligne de frais mensuel = un mois d'une année scolaire donnée.
+    private static function lineKey($studentId, $type, $installmentId, $feeTypeId, $month = null, $yearId = null): string
     {
-        return implode('|', [(int) $studentId, $type, (int) $installmentId, (int) $feeTypeId]);
+        return implode('|', [(int) $studentId, $type, (int) $installmentId, (int) $feeTypeId, (int) $month, $month ? (int) $yearId : 0]);
     }
 }

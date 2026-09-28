@@ -15,14 +15,15 @@ class TrancheController extends Controller
     public function index(Request $request)
     {
         return TuitionInstallment::with('schoolClass')
-            ->when($request->class_id, fn ($q, $id) => $q->where('class_id', $id))
+            // Un groupe (CE1 B) affiche les tranches de sa classe principale.
+            ->when($request->class_id, fn ($q, $id) => $q->where('class_id', SchoolClass::find($id)?->pricing_class_id ?? $id))
             ->orderBy('due_date')
             ->get();
     }
 
     public function store(StoreTrancheRequest $request)
     {
-        $data = $request->validated();
+        $data = $this->onPricingClass($request->validated());
         $this->assertWithinTuitionCeiling($data['class_id'], $data['amount']);
 
         return TuitionInstallment::create($data);
@@ -45,7 +46,7 @@ class TrancheController extends Controller
             'tranches.*.due_date' => ['nullable', 'date'],
         ]);
 
-        $class = SchoolClass::findOrFail($data['class_id']);
+        $class = SchoolClass::findOrFail(SchoolClass::findOrFail($data['class_id'])->pricing_class_id);
         $existingTotal = (float) TuitionInstallment::where('class_id', $class->id)->sum('amount');
         $added = array_sum(array_map(fn ($tranche) => (float) $tranche['amount'], $data['tranches']));
 
@@ -68,7 +69,7 @@ class TrancheController extends Controller
 
     public function update(StoreTrancheRequest $request, TuitionInstallment $tranche)
     {
-        $data = $request->validated();
+        $data = $this->onPricingClass($request->validated());
         $this->assertWithinTuitionCeiling($data['class_id'], $data['amount'], excludeId: $tranche->id);
 
         $tranche->update($data);
@@ -81,6 +82,12 @@ class TrancheController extends Controller
         $tranche->delete();
 
         return response()->noContent();
+    }
+
+    /** Saisie sur un groupe (CE1 B) = tranche de sa classe principale, commune aux deux. */
+    private function onPricingClass(array $data): array
+    {
+        return [...$data, 'class_id' => SchoolClass::findOrFail($data['class_id'])->pricing_class_id];
     }
 
     /**

@@ -17,16 +17,16 @@ class DefaultRolePermissions
     public const MAP = [
         'cashier' => [
             'dashboard.view', 'students.view',
-            'payments.create', 'payments.view', 'payments.print', 'debtors.print',
+            'payments.create', 'payments.view', 'payments.print', 'debtors.print', 'cash.close',
         ],
         'secretary' => [
             'dashboard.view', 'students.view', 'students.create', 'students.update', 'students.reenroll',
             'classes.view', 'tranches.view', 'fees.view',
-            'payments.view', 'payments.print', 'debtors.print', 'teachers.view',
+            'payments.view', 'payments.print', 'debtors.print', 'teachers.view', 'cash.close',
         ],
         'accountant' => [
             'dashboard.view', 'students.view', 'classes.view', 'tranches.view', 'fees.view',
-            'payments.view', 'payments.print', 'debtors.print', 'finance.view', 'teachers.view', 'audit.view',
+            'payments.view', 'payments.print', 'debtors.print', 'finance.view', 'teachers.view', 'audit.view', 'cash.report',
         ],
     ];
 

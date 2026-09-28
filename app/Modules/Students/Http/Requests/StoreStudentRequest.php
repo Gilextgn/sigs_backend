@@ -28,6 +28,9 @@ class StoreStudentRequest extends FormRequest
             'guardian.relationship_label' => ['required_with:guardian', 'string', 'max:50'],
             'guardian.phone' => ['required_with:guardian', 'string', 'max:40'],
             'guardian.address' => ['nullable', 'string', 'max:255'],
+            // Canaux d'envoi automatique du reçu.
+            'guardian.email' => ['nullable', 'email', 'max:180'],
+            'guardian.whatsapp' => ['nullable', 'string', 'max:40', 'regex:/^[+0-9 ().-]{8,}$/'],
         ];
     }
 }

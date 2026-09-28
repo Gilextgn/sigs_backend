@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Modules\Fees\Http\Controllers\FeeSubscriptionController;
 use Modules\Fees\Http\Controllers\FeeTypeController;
 
 Route::middleware('auth:sanctum')->prefix('fees')->group(function () {
@@ -8,4 +9,10 @@ Route::middleware('auth:sanctum')->prefix('fees')->group(function () {
     Route::post('/', [FeeTypeController::class, 'store'])->middleware('permission:fees.manage');
     Route::put('/{feeType}', [FeeTypeController::class, 'update'])->middleware('permission:fees.manage');
     Route::delete('/{feeType}', [FeeTypeController::class, 'destroy'])->middleware('permission:fees.manage');
+});
+
+Route::middleware('auth:sanctum')->prefix('students/{student}')->group(function () {
+    Route::get('/fee-subscriptions', [FeeSubscriptionController::class, 'index'])->middleware('permission:students.view');
+    Route::put('/fee-subscriptions', [FeeSubscriptionController::class, 'update'])->middleware('permission:students.update');
+    Route::get('/payable-lines', [FeeSubscriptionController::class, 'payableLines'])->middleware('permission:payments.create');
 });

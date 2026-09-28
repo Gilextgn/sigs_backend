@@ -9,6 +9,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('classes')->group(function () {
         Route::get('/', [ClassController::class, 'index'])->middleware('permission:classes.view');
         Route::post('/', [ClassController::class, 'store'])->middleware('permission:classes.manage');
+        Route::put('/reorder', [ClassController::class, 'reorder'])->middleware('permission:classes.manage');
         Route::get('/{class}', [ClassController::class, 'show'])->middleware('permission:classes.view');
         Route::put('/{class}', [ClassController::class, 'update'])->middleware('permission:classes.manage');
         Route::delete('/{class}', [ClassController::class, 'destroy'])->middleware('permission:classes.manage');

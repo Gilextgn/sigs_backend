@@ -10,7 +10,7 @@ class Guardian extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['school_id', 'full_name', 'relationship_label', 'phone', 'address'];
+    protected $fillable = ['school_id', 'full_name', 'relationship_label', 'phone', 'address', 'email', 'whatsapp'];
 
     protected function casts(): array
     {
@@ -21,6 +21,8 @@ class Guardian extends Model
             'full_name' => 'encrypted',
             'phone' => 'encrypted',
             'address' => 'encrypted',
+            'email' => 'encrypted',
+            'whatsapp' => 'encrypted',
         ];
     }
 
