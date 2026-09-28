@@ -8,7 +8,7 @@ class Teacher extends Model
 {
     use \App\Support\BelongsToSchool;
 
-    protected $fillable = ['school_id', 'full_name', 'phone', 'subject', 'pay_mode', 'monthly_salary', 'hourly_rate', 'status'];
+    protected $fillable = ['school_id', 'full_name', 'phone', 'subject', 'level', 'pay_mode', 'monthly_salary', 'hourly_rate', 'status'];
 
     /** Payé à l'heure faite (par défaut), plutôt qu'au salaire fixe. */
     public function isPaidHourly(): bool

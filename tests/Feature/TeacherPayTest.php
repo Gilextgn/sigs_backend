@@ -83,18 +83,14 @@ class TeacherPayTest extends TestCase
             ->assertJsonPath('totals.pending_amount', 5000);
     }
 
-    public function test_a_replaced_session_is_paid_to_the_substitute(): void
+    public function test_replaced_is_no_longer_accepted_and_justified_needs_a_reason(): void
     {
-        $holder = $this->teacher();
-        $substitute = $this->teacher(['full_name' => 'Remplaçant', 'hourly_rate' => 2000]);
-        $session = $this->sessionFor($holder);
+        $teacherId = $this->teacher();
+        $session = $this->sessionFor($teacherId);
 
-        $this->attend($session, $holder, ['status' => 'replaced'])->assertStatus(422);
-        $this->attend($session, $holder, ['status' => 'replaced', 'replacement_teacher_id' => $substitute])->assertSuccessful();
-
-        $this->actingAs($this->admin)->getJson("/api/payroll/estimate?teacher_id={$holder}&period=2026-10")->assertJsonPath('worked_minutes', 0);
-        $this->actingAs($this->admin)->getJson("/api/payroll/estimate?teacher_id={$substitute}&period=2026-10")
-            ->assertJsonPath('worked_minutes', 120)->assertJsonPath('amount', 4000);
+        $this->attend($session, $teacherId, ['status' => 'replaced'])->assertStatus(422);
+        $this->attend($session, $teacherId, ['status' => 'justified'])->assertStatus(422);
+        $this->attend($session, $teacherId, ['status' => 'justified', 'reason' => 'Maladie'])->assertSuccessful();
     }
 
     public function test_a_slot_can_be_edited_and_old_clashes_are_flagged(): void
@@ -133,5 +129,40 @@ class TeacherPayTest extends TestCase
         $this->actingAs($this->admin)->postJson('/api/payments', ['student_id' => $student->id, 'items' => [['item_type' => 'AUTRE_FRAIS', 'fee_type_id' => $feeId, 'paid_amount' => 5000]]])->assertCreated();
 
         $this->actingAs($this->admin)->deleteJson("/api/fees/{$feeId}")->assertStatus(422)->assertJsonFragment(['message' => 'Impossible de supprimer « Excursion » : il a déjà été encaissé 1 fois et figure sur des reçus. Retirez-lui ses classes (ou passez-le « sur inscription » sans inscrit) pour qu\'il ne soit plus demandé.']);
+    }
+
+    public function test_a_teacher_cannot_be_marked_present_in_two_classes_at_once(): void
+    {
+        $teacherId = $this->teacher();
+        $first = $this->sessionFor($teacherId);
+        $second = $this->sessionFor($teacherId);
+
+        $sessions = collect($this->actingAs($this->admin)->getJson('/api/teaching-sessions?date=2026-10-07')->assertOk()->json());
+        $this->assertTrue($sessions->every(fn ($session) => $session['conflict'] !== null));
+
+        $this->attend($first, $teacherId, ['status' => 'present'])->assertSuccessful();
+        $this->attend($second, $teacherId, ['status' => 'present'])->assertStatus(422);
+        $this->attend($second, $teacherId, ['status' => 'absent', 'reason' => 'Était en 2nde'])->assertSuccessful();
+    }
+
+    public function test_a_primary_teacher_is_paid_monthly_and_takes_all_subjects_at_once(): void
+    {
+        $this->actingAs($this->admin)->postJson('/api/teachers', ['full_name' => 'Maîtresse CP', 'level' => 'primary'])
+            ->assertStatus(422)->assertJsonValidationErrors('monthly_salary');
+
+        $teacher = $this->actingAs($this->admin)->postJson('/api/teachers', ['full_name' => 'Maîtresse CP', 'level' => 'primary', 'monthly_salary' => 80000, 'hourly_rate' => 2000])
+            ->assertSuccessful()
+            ->assertJsonPath('pay_mode', 'monthly')
+            ->assertJsonPath('hourly_rate', null);
+        $this->actingAs($this->admin)->postJson('/api/teachers', ['full_name' => 'Prof collège', 'level' => 'secondary', 'hourly_rate' => 3000])
+            ->assertSuccessful()->assertJsonPath('pay_mode', 'hourly');
+
+        $classId = $this->createSchoolClass()->id;
+        $subjectIds = Subject::limit(3)->pluck('id')->all();
+        $this->actingAs($this->admin)->postJson('/api/teacher-assignments', ['teacher_id' => $teacher->json('id'), 'class_id' => $classId, 'subject_ids' => $subjectIds])
+            ->assertCreated()->assertJsonCount(3);
+
+        // Salaire fixe : les présences ne changent pas le montant.
+        $this->actingAs($this->admin)->getJson('/api/payroll/estimate?teacher_id='.$teacher->json('id').'&period=2026-10')->assertJsonPath('amount', 80000);
     }
 }

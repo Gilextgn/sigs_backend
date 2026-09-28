@@ -31,7 +31,7 @@ class AuditLog extends Model
 
     public static function record(string $actionCode, string $entityName, ?string $entityId = null, array $details = []): self
     {
-        return self::create([
+        $log = self::create([
             'school_id' => \App\Support\CurrentSchool::id(),
             'actor_user_id' => request()->user()?->id,
             'action_code' => $actionCode,
@@ -41,5 +41,10 @@ class AuditLog extends Model
             'ip_address' => request()->ip(),
             'created_at' => now(),
         ]);
+
+        // Traçabilité : action de caisse d'un non-administrateur -> notification aux admins.
+        \Modules\Security\Services\AdminNotifier::fromAudit($log);
+
+        return $log;
     }
 }

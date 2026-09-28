@@ -17,6 +17,8 @@ class StoreTeacherRequest extends FormRequest
             'full_name' => ['required', 'string', 'max:180'],
             'phone' => ['nullable', 'digits:10'],
             'subject' => ['nullable', 'string', 'max:120'],
+            // primary : salaire mensuel fixe ; secondary (collège) : payé à l'heure.
+            'level' => ['nullable', 'in:primary,secondary'],
             'pay_mode' => ['nullable', 'in:hourly,monthly'],
             // Salaire fixe : exigé seulement quand c'est le mode de paie retenu.
             // À l'heure, la paie vient des séances faites (voir PayrollController).
@@ -30,6 +32,11 @@ class StoreTeacherRequest extends FormRequest
     /** Numéro saisi « 01 66 18 98 77 » : on ne garde que les chiffres. */
     protected function prepareForValidation(): void
     {
+        // Le niveau décide du mode de paie : pas de combinaison incohérente possible.
+        if (in_array($this->level, ['primary', 'secondary'], true)) {
+            $this->merge(['pay_mode' => $this->level === 'primary' ? 'monthly' : 'hourly']);
+        }
+
         if (is_string($this->phone)) {
             $this->merge(['phone' => preg_replace('/\D/', '', $this->phone) ?: null]);
         }
@@ -54,6 +61,7 @@ class StoreTeacherRequest extends FormRequest
         return [
             'phone.digits' => 'Le téléphone doit comporter exactement 10 chiffres.',
             'hourly_rate.required_unless' => 'Indiquez le tarif horaire de cet enseignant.',
+            'monthly_salary.required_if' => 'Indiquez le salaire mensuel de cet enseignant.',
         ];
     }
 }
