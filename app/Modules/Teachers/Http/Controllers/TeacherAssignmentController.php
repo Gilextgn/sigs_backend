@@ -25,7 +25,8 @@ class TeacherAssignmentController extends Controller
             'teacher_id' => ['required', \App\Support\SchoolRule::exists('teachers')],
             'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
             // Une matière, ou plusieurs d'un coup (enseignant du primaire : toutes les matières de sa classe).
-            'subject_id' => ['required_without:subject_ids', 'nullable', \App\Support\SchoolRule::exists('subjects')],
+            // Primaire : aucune matière cochée = toutes les matières du primaire.
+            'subject_id' => ['nullable', \App\Support\SchoolRule::exists('subjects')],
             'subject_ids' => ['nullable', 'array', 'min:1'],
             'subject_ids.*' => ['integer', 'distinct', \App\Support\SchoolRule::exists('subjects')],
             // Vide : le tarif horaire saisi sur la fiche de l'enseignant (0 pour un salaire fixe).
@@ -37,7 +38,18 @@ class TeacherAssignmentController extends Controller
         $rate = $data['hourly_rate'] ?? ($teacher->isPaidHourly() ? (float) $teacher->hourly_rate : 0);
         abort_if($teacher->isPaidHourly() && $rate <= 0, 422, 'Indiquez le tarif horaire de cet enseignant sur sa fiche.');
 
-        $subjectIds = $data['subject_ids'] ?? [$data['subject_id']];
+        $primary = ($teacher->level ?? 'secondary') === 'primary';
+        $subjectIds = $data['subject_ids'] ?? (isset($data['subject_id']) ? [$data['subject_id']] : null);
+        if ($subjectIds === null) {
+            abort_unless($primary, 422, 'Choisissez la matière de cette affectation.');
+            $subjectIds = \Modules\Teachers\Models\Subject::where('is_active', true)->forLevel('primary')->pluck('id')->all();
+            abort_if($subjectIds === [], 422, 'Aucune matière du primaire : ajoutez-en dans École › Matières.');
+            $data['subject_ids'] = $subjectIds;
+        }
+
+        // Une matière réservée à l'autre niveau n'a rien à faire ici.
+        $wrong = \Modules\Teachers\Models\Subject::whereIn('id', $subjectIds)->where('level', $primary ? 'secondary' : 'primary')->pluck('label');
+        abort_if($wrong->isNotEmpty(), 422, 'Matière(s) réservée(s) au '.($primary ? 'collège' : 'primaire').' : '.$wrong->implode(', ').'.');
         $assignments = collect($subjectIds)->map(function ($subjectId) use ($data, $rate) {
             $assignment = TeacherAssignment::firstOrCreate(
                 [

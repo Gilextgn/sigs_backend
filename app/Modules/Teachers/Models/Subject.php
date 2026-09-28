@@ -8,7 +8,13 @@ class Subject extends Model
 {
     use \App\Support\BelongsToSchool;
 
-    protected $fillable = ['school_id', 'code', 'label', 'is_active'];
+    protected $fillable = ['school_id', 'code', 'label', 'level', 'is_active'];
+
+    /** Matières d'un niveau : les siennes et celles communes aux deux. */
+    public function scopeForLevel($query, string $level)
+    {
+        return $query->whereIn('level', [$level, 'both']);
+    }
 
     protected function casts(): array
     {

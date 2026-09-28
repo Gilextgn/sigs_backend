@@ -13,6 +13,7 @@ class SubjectController extends Controller
         return Subject::query()
             ->where('is_active', true)
             ->when($request->search, fn ($query, $search) => $query->where('label', 'like', "%{$search}%"))
+            ->when(in_array($request->level, ['primary', 'secondary'], true), fn ($query) => $query->forLevel($request->level))
             ->orderBy('label')
             ->get();
     }
@@ -22,7 +23,10 @@ class SubjectController extends Controller
         $data = $request->validate([
             'code' => ['required', 'string', 'max:50', \App\Support\SchoolRule::unique('subjects', 'code')],
             'label' => ['required', 'string', 'max:120'],
+            // primary : primaire ; secondary : collège ; both : les deux.
+            'level' => ['nullable', 'in:primary,secondary,both'],
         ]);
+        $data['level'] ??= 'both';
 
         return response()->json(Subject::create($data), 201);
     }
@@ -32,6 +36,7 @@ class SubjectController extends Controller
         $subject->update($request->validate([
             'code' => ['sometimes', 'string', 'max:50'],
             'label' => ['sometimes', 'string', 'max:120'],
+            'level' => ['sometimes', 'in:primary,secondary,both'],
             'is_active' => ['boolean'],
         ]));
 

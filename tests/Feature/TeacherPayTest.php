@@ -165,4 +165,23 @@ class TeacherPayTest extends TestCase
         // Salaire fixe : les présences ne changent pas le montant.
         $this->actingAs($this->admin)->getJson('/api/payroll/estimate?teacher_id='.$teacher->json('id').'&period=2026-10')->assertJsonPath('amount', 80000);
     }
+
+    public function test_a_primary_teacher_gets_every_primary_subject_by_default(): void
+    {
+        $teacherId = $this->actingAs($this->admin)->postJson('/api/teachers', ['full_name' => 'Maître CE1', 'level' => 'primary', 'monthly_salary' => 75000])->json('id');
+        $college = $this->actingAs($this->admin)->postJson('/api/subjects', ['code' => 'svt', 'label' => 'SVT', 'level' => 'secondary'])->assertCreated()->json('id');
+        $this->actingAs($this->admin)->postJson('/api/subjects', ['code' => 'ecriture', 'label' => 'Écriture', 'level' => 'primary'])->assertCreated();
+        $classId = $this->createSchoolClass()->id;
+
+        $expected = Subject::where('is_active', true)->whereIn('level', ['primary', 'both'])->count();
+        $this->actingAs($this->admin)->postJson('/api/teacher-assignments', ['teacher_id' => $teacherId, 'class_id' => $classId])
+            ->assertCreated()->assertJsonCount($expected);
+        $this->assertFalse(\Modules\Teachers\Models\TeacherAssignment::where('teacher_id', $teacherId)->where('subject_id', $college)->exists());
+
+        // Matière du collège refusée pour un enseignant du primaire ; liste filtrée par niveau.
+        $this->actingAs($this->admin)->postJson('/api/teacher-assignments', ['teacher_id' => $teacherId, 'class_id' => $classId, 'subject_id' => $college])->assertStatus(422);
+        $labels = collect($this->actingAs($this->admin)->getJson('/api/subjects?level=primary')->json())->pluck('label');
+        $this->assertContains('Écriture', $labels);
+        $this->assertNotContains('SVT', $labels);
+    }
 }
