@@ -28,6 +28,9 @@ return [
         'token' => env('WHATSAPP_TOKEN'),
         'phone_number_id' => env('WHATSAPP_PHONE_NUMBER_ID'),
         'template' => env('WHATSAPP_RECEIPT_TEMPLATE', 'recu_paiement'),
+        // Relances : modèle Meta à une seule variable {{1}} = le message rédigé par le directeur.
+        // Vide = relances WhatsApp envoyées à la main (lien wa.me pré-rempli).
+        'reminder_template' => env('WHATSAPP_REMINDER_TEMPLATE'),
         'language' => env('WHATSAPP_TEMPLATE_LANGUAGE', 'fr'),
     ],
 
