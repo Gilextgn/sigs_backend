@@ -8,6 +8,15 @@ use Modules\SchoolClasses\Models\SchoolClass;
 class TuitionInstallment extends Model
 {
     use \App\Support\BelongsToSchool;
+    use \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit. */
+    protected string $auditName = 'tranche';
+
+    public function auditLabel(): string
+    {
+        return $this->label.' — '.($this->schoolClass?->label ?? '');
+    }
 
     protected $table = 'tuition_installments';
 

@@ -15,6 +15,8 @@ class ClassController extends Controller
     public function index(Request $request)
     {
         return SchoolClass::with('cycle', 'parent:id,label')
+            // Effectif actif : affiché sur les cadres de classe de l'écran Élèves.
+            ->withCount(['students as students_count' => fn ($q) => $q->where('status', 'active')])
             ->when($request->search, fn ($q, $s) => $q->where('label', 'like', "%{$s}%"))
             ->ordered()
             ->get();

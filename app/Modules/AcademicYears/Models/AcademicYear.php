@@ -7,6 +7,15 @@ use Illuminate\Database\Eloquent\Model;
 class AcademicYear extends Model
 {
     use \App\Support\BelongsToSchool;
+    use \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit. */
+    protected string $auditName = 'année scolaire';
+
+    public function auditLabel(): string
+    {
+        return $this->code;
+    }
 
     public $timestamps = false;
 

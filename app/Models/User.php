@@ -9,7 +9,12 @@ use Modules\Users\Models\Role;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, Notifiable;
+    use HasApiTokens, Notifiable, \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit ; le téléphone chiffré n'y est jamais recopié. */
+    protected string $auditName = 'utilisateur';
+
+    protected array $auditHidden = ['phone', 'password', 'password_changed_at'];
 
     protected $fillable = [
         'school_id',

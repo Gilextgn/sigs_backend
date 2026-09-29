@@ -41,7 +41,15 @@ class AuthController extends Controller
         if (! $user || ! Auth::attempt($credentials, true)) {
             RateLimiter::hit($emailKey, 60);
             RateLimiter::hit($ipKey, 60);
-            AuditLog::record('auth.login_failed', 'User', null, ['email' => $credentials['email']]);
+            // Rattachée à l'école du compte visé (si l'e-mail existe) pour que son directeur la voie.
+            AuditLog::create([
+                'school_id' => $user?->school_id ?? \App\Support\CurrentSchool::DEFAULT_ID,
+                'action_code' => 'auth.login_failed',
+                'entity_name' => 'User',
+                'details_json' => ['email' => $credentials['email']],
+                'ip_address' => $request->ip(),
+                'created_at' => now(),
+            ]);
             throw ValidationException::withMessages([
                 'email' => 'Identifiants invalides.',
             ]);
@@ -68,6 +76,19 @@ class AuthController extends Controller
         RateLimiter::clear($ipKey);
         $request->session()->regenerate();
         $user->forceFill(['last_login_at' => now()])->save();
+
+        // Traçabilité : qui s'est connecté, quand et d'où (l'école n'est pas encore fixée à ce stade).
+        // Le compte plateforme (sans école) n'a pas de journal d'établissement.
+        if ($user->school_id !== null) AuditLog::create([
+            'school_id' => $user->school_id,
+            'actor_user_id' => $user->id,
+            'action_code' => 'auth.login',
+            'entity_name' => 'User',
+            'entity_id' => (string) $user->id,
+            'details_json' => ['user_agent' => mb_substr((string) $request->userAgent(), 0, 180)],
+            'ip_address' => $request->ip(),
+            'created_at' => now(),
+        ]);
 
         return response()->json(['user' => SchoolAccess::userPayload($user)]);
     }
@@ -118,6 +139,9 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
+        if ($request->user()?->school_id !== null && $request->user()) {
+            AuditLog::record('auth.logout', 'User', (string) $request->user()->id);
+        }
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();

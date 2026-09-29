@@ -7,7 +7,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/cycles', [ClassController::class, 'cycles'])->middleware('permission:classes.view');
 
     Route::prefix('classes')->group(function () {
-        Route::get('/', [ClassController::class, 'index'])->middleware('permission:classes.view');
+        // La liste des classes sert aussi à ranger les élèves : consulter les élèves suffit.
+        Route::get('/', [ClassController::class, 'index'])->middleware('permission:classes.view|students.view');
         Route::post('/', [ClassController::class, 'store'])->middleware('permission:classes.manage');
         Route::put('/reorder', [ClassController::class, 'reorder'])->middleware('permission:classes.manage');
         Route::get('/{class}', [ClassController::class, 'show'])->middleware('permission:classes.view');

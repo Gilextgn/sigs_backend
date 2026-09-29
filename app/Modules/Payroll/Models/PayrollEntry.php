@@ -8,6 +8,15 @@ use Modules\Teachers\Models\Teacher;
 class PayrollEntry extends Model
 {
     use \App\Support\BelongsToSchool;
+    use \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit. */
+    protected string $auditName = 'fiche de paie';
+
+    public function auditLabel(): string
+    {
+        return 'paie '.$this->period.' — '.($this->teacher?->full_name ?? '');
+    }
 
     protected $fillable = ['school_id', 'teacher_id', 'period', 'base_amount', 'bonus_amount', 'deduction_amount', 'status', 'paid_at'];
 

@@ -78,10 +78,8 @@ class ReminderTest extends TestCase
             ->assertOk()->assertJsonPath('0.logs.0.channel', 'email')->assertJsonPath('0.logs.0.status', 'sent');
         $this->actingAs($this->admin)->postJson("/api/reminders/{$this->student->id}/manual")->assertCreated();
 
-        $this->actingAs($this->admin)->postJson('/api/reminders/paper', ['student_ids' => [$this->student->id]])->assertCreated()->assertJsonPath('logged', 1);
-
-        $this->assertDatabaseCount('reminder_logs', 3);
-        $this->actingAs($this->admin)->getJson('/api/reminders')->assertJsonPath('history.0.channel', 'paper');
+        $this->assertDatabaseCount('reminder_logs', 2);
+        $this->actingAs($this->admin)->getJson('/api/reminders')->assertJsonPath('history.0.channel', 'whatsapp_manual');
     }
 
     public function test_daily_run_happens_once_a_day_and_only_when_enabled(): void

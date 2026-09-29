@@ -198,8 +198,14 @@ class PlatformSchoolController extends Controller
             'subscription_due_at' => ['sometimes', 'nullable', 'date'],
             'auto_suspend' => ['sometimes', 'boolean'],
             'grace_days' => ['sometimes', 'integer', 'min:0', 'max:90'],
+            // Groupe scolaire : même code = sites d'un même directeur.
+            'group_code' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'site_label' => ['sometimes', 'nullable', 'string', 'max:80'],
             ...self::CONTACT_RULES,
         ]);
+        if (array_key_exists('group_code', $data)) {
+            $data['group_code'] = $data['group_code'] ? mb_strtoupper(trim($data['group_code'])) : null;
+        }
 
         $previousName = $school->name;
         $school->update($data);
@@ -314,6 +320,8 @@ class PlatformSchoolController extends Controller
         return [
             'id' => $school->id,
             'name' => $school->name,
+            'group_code' => $school->group_code,
+            'site_label' => $school->site_label,
             'status' => $school->status(),
             'suspension_kind' => $school->suspensionKind(),
             'suspension_reason' => $school->suspension_reason,

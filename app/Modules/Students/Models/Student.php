@@ -9,6 +9,18 @@ use Modules\SchoolClasses\Models\SchoolClass;
 class Student extends Model
 {
     use \App\Support\BelongsToSchool;
+    use \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit. */
+    protected string $auditName = 'élève';
+
+    /** Champs chiffrés : jamais recopiés en clair dans le journal. */
+    protected array $auditHidden = ['first_name', 'last_name'];
+
+    public function auditLabel(): string
+    {
+        return $this->fullName().' ('.$this->matricule.')';
+    }
 
     protected $fillable = [
         'school_id', 'academic_year_id', 'class_id', 'guardian_id',

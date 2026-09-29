@@ -22,11 +22,19 @@ class EnsurePermission
 
         abort_if(! $user, 401, 'Authentification requise.');
 
-        abort_unless(
-            $user->hasPermission($permission),
-            403,
-            "Accès refusé : permission '{$permission}' requise."
-        );
+        // « a|b » : l'un OU l'autre de ces droits suffit.
+        $accepted = explode('|', $permission);
+        if (! collect($accepted)->contains(fn ($code) => $user->hasPermission($code))) {
+            // Message lisible (libellé du droit) plutôt qu'un code technique.
+            $permission = $accepted[0];
+            $label = \Modules\Users\Models\Permission::where('code', $permission)->value('label') ?? $permission;
+
+            return response()->json([
+                'code' => 'permission_denied',
+                'permission' => $permission,
+                'message' => "Votre compte n'a pas le droit de : ".mb_strtolower($label).". Demandez-le à l'administrateur si besoin.",
+            ], 403);
+        }
 
         return $next($request);
     }

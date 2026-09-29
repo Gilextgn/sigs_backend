@@ -15,7 +15,7 @@ use Modules\Security\Models\AuditLog;
 class AdminNotifier
 {
     /** Actions notifiées (codes du journal d'audit). */
-    public const ACTIONS = ['payment.created', 'payment.deleted', 'payment.receipt_sent', 'cash.closed', 'cash.reopened'];
+    public const ACTIONS = ['payment.created', 'payment.deleted', 'payment.receipt_sent', 'cash.closed', 'cash.reopened', 'cash.handover'];
 
     public static function fromAudit(AuditLog $log): void
     {
@@ -28,11 +28,7 @@ class AdminNotifier
             return;
         }
 
-        $admins = User::whereHas('role', fn ($q) => $q->where('code', 'admin'))
-            ->where('school_id', $log->school_id)
-            ->where('status', 'active')
-            ->where('id', '!=', $actor->id)
-            ->pluck('id');
+        $admins = self::recipients((int) $log->school_id, $actor->id);
 
         if ($admins->isEmpty()) {
             return;
@@ -52,6 +48,71 @@ class AdminNotifier
             'entity_id' => $log->entity_id,
             'created_at' => $now,
         ])->all());
+    }
+
+    /**
+     * Changements sensibles faits par un non-administrateur (tarifs, élèves,
+     * comptes, paie) : l'admin en est averti comme pour la caisse.
+     */
+    public const SENSITIVE = [
+        'tuitioninstallment.updated', 'tuitioninstallment.deleted', 'tuitioninstallment.created',
+        'feetype.updated', 'feetype.deleted',
+        'schoolclass.updated', 'schoolclass.deleted',
+        'student.deleted',
+        'user.created', 'user.updated', 'user.deleted',
+        'payrollentry.created', 'payrollentry.updated',
+    ];
+
+    public static function fromModelAudit(string $code, string $name, \Illuminate\Database\Eloquent\Model $model, ?array $before, ?array $after): void
+    {
+        $actor = request()->user();
+        if (! in_array($code, self::SENSITIVE, true) || ! $actor || $actor->loadMissing('role')->role?->code === 'admin') {
+            return;
+        }
+        $schoolId = (int) ($model->school_id ?? \App\Support\CurrentSchool::id());
+        $admins = self::recipients($schoolId, $actor->id);
+        if ($admins->isEmpty()) {
+            return;
+        }
+
+        $verb = str_ends_with($code, '.created') ? 'créé(e)' : (str_ends_with($code, '.deleted') ? 'supprimé(e)' : 'modifié(e)');
+        $label = method_exists($model, 'auditLabel') ? $model->auditLabel() : ($model->label ?? $model->full_name ?? '#'.$model->getKey());
+        // Détail « champ : avant → après » des champs visibles (les champs chiffrés restent masqués).
+        $diff = collect($after ?? $before ?? [])->except(['id'])->map(fn ($value, $key) => $key.' : '.(isset($before[$key]) && $after !== null ? self::show($before[$key]).' → ' : '').self::show($value))->take(4)->implode(' · ');
+        $now = now();
+
+        AdminNotification::insert($admins->map(fn ($adminId) => [
+            'school_id' => $schoolId,
+            'user_id' => $adminId,
+            'actor_user_id' => $actor->id,
+            'action_code' => $code,
+            'title' => mb_substr(ucfirst($name).' '.$verb.' par '.$actor->full_name, 0, 160),
+            'body' => mb_substr(trim($label.($diff !== '' ? ' — '.$diff : '')), 0, 500),
+            'entity_name' => $name,
+            'entity_id' => (string) $model->getKey(),
+            'created_at' => $now,
+        ])->all());
+    }
+
+    /**
+     * Administrateurs à prévenir : ceux de l'école concernée, et le directeur
+     * d'un groupe scolaire qui supervise plusieurs sites.
+     */
+    private static function recipients(int $schoolId, int $actorId): \Illuminate\Support\Collection
+    {
+        $schoolIds = \App\Support\SchoolGroup::siteIds($schoolId);
+
+        return User::withoutGlobalScopes()
+            ->whereHas('role', fn ($q) => $q->where('code', 'admin'))
+            ->whereIn('school_id', $schoolIds)
+            ->where('status', 'active')
+            ->where('id', '!=', $actorId)
+            ->pluck('id');
+    }
+
+    private static function show($value): string
+    {
+        return is_scalar($value) || $value === null ? mb_substr((string) ($value ?? '—'), 0, 40) : '…';
     }
 
     private static function describe(AuditLog $log, User $actor): array
@@ -77,6 +138,7 @@ class AdminNotifier
                     .((float) ($d['difference'] ?? 0) != 0 ? ' · écart '.$money($d['difference']) : ' · caisse juste'),
             ],
             'cash.reopened' => ["Caisse rouverte par {$who}", ($d['closing_date'] ?? '').(isset($d['reason']) ? ' · motif : '.$d['reason'] : '')],
+            'cash.handover' => ["Remise de caisse reçue par {$who}", 'Attendu '.$money($d['expected_amount'] ?? 0).' · reçu '.$money($d['received_amount'] ?? 0)],
             default => [$log->action_code.' par '.$who, null],
         };
     }

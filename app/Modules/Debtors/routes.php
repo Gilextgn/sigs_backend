@@ -10,7 +10,6 @@ Route::middleware('auth:sanctum')->prefix('reminders')->group(function () {
     Route::get('/', [ReminderController::class, 'index'])->middleware('permission:debtors.print');
     Route::put('/settings', [ReminderController::class, 'updateSettings'])->middleware('permission:settings.manage');
     Route::post('/send', [ReminderController::class, 'send'])->middleware('permission:debtors.print');
-    Route::post('/paper', [ReminderController::class, 'logPaper'])->middleware('permission:debtors.print');
     Route::post('/{studentId}/manual', [ReminderController::class, 'logManual'])->middleware('permission:debtors.print')->whereNumber('studentId');
     // Relances automatiques du jour : déclenchées par n'importe quel utilisateur connecté de l'école.
     Route::post('/auto', [ReminderController::class, 'auto']);

@@ -6,7 +6,8 @@ use App\Http\Controllers\Controller;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Modules\Payments\Models\CashClosing;
+use Modules\Payments\Models\CashHandover;
+use Modules\Payments\Models\Payment;
 use Modules\Payments\Services\CashReport;
 use Modules\Security\Models\AuditLog;
 
@@ -37,86 +38,99 @@ class CashController extends Controller
 
         return response()->json([
             ...$this->report->build($from, $to, $cashierId),
-            'my_day' => $this->myDay($user->id),
+            // Argent encaissé par l'utilisateur et pas encore remis au directeur.
+            'my_pending' => $this->report->pendingFor($user->id),
         ]);
     }
 
-    /** Clôture de la caisse du jour de l'utilisateur connecté. */
-    public function close(Request $request)
+    /**
+     * Remises en attente : pour chaque caissier, ce qu'il a encaissé depuis sa
+     * dernière remise. Le directeur voit tout le monde, un caissier se voit lui.
+     */
+    public function pending(Request $request)
+    {
+        $user = $request->user();
+        $cashierIds = $user->hasPermission('cash.receive')
+            ? Payment::query()->distinct()->pluck('cashier_user_id')
+            : collect([$user->id]);
+        $names = \App\Models\User::withoutGlobalScopes()->whereIn('id', $cashierIds)->pluck('full_name', 'id');
+
+        return response()->json(
+            $cashierIds->map(fn ($id) => ['cashier_id' => (int) $id, 'cashier' => $names[$id] ?? '—', ...$this->report->pendingFor((int) $id)])
+                ->filter(fn ($row) => $row['payment_count'] > 0)
+                ->sortByDesc('expected_amount')
+                ->values()
+        );
+    }
+
+    /**
+     * Le directeur reçoit l'argent d'un caissier : il saisit ce qu'il a compté.
+     * La remise couvre tous les paiements du caissier jusqu'à cet instant ;
+     * ils ne peuvent plus être annulés.
+     */
+    public function receive(Request $request)
     {
         $data = $request->validate([
-            'counted_amount' => ['required', 'numeric', 'min:0', 'max:9999999999'],
+            'cashier_user_id' => ['required', 'integer'],
+            'received_amount' => ['required', 'numeric', 'min:0', 'max:9999999999'],
             'note' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $userId = $request->user()->id;
-        $today = today()->toDateString();
+        $handover = DB::transaction(function () use ($data, $request) {
+            // Verrou : deux remises simultanées ne couvrent pas deux fois les mêmes paiements.
+            DB::table('users')->where('id', $data['cashier_user_id'])->lockForUpdate()->first();
+            $pending = $this->report->pendingFor((int) $data['cashier_user_id']);
+            abort_if($pending['payment_count'] === 0, 422, "Ce caissier n'a rien à remettre.");
 
-        $closing = DB::transaction(function () use ($data, $userId, $today) {
-            // Verrou : deux clics simultanés ne créent pas deux clôtures.
-            DB::table('users')->where('id', $userId)->lockForUpdate()->first();
-            abort_if(CashClosing::isClosed($userId, $today), 422, 'Votre caisse du jour est déjà clôturée.');
-
-            $expected = $this->report->expectedFor($userId, $today);
-            $difference = round((float) $data['counted_amount'] - $expected['expected_amount'], 2);
-
+            $difference = round((float) $data['received_amount'] - $pending['expected_amount'], 2);
             if ($difference != 0 && blank($data['note'] ?? null)) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
-                    'note' => "Le montant compté ne correspond pas au montant attendu : expliquez l'écart.",
+                    'note' => "Le montant reçu ne correspond pas au montant attendu : expliquez l'écart.",
                 ]);
             }
 
-            return CashClosing::create([
-                'cashier_user_id' => $userId,
-                'closing_date' => $today,
-                'payment_count' => $expected['payment_count'],
-                'expected_amount' => $expected['expected_amount'],
-                'counted_amount' => $data['counted_amount'],
+            return CashHandover::create([
+                'cashier_user_id' => $data['cashier_user_id'],
+                'received_by_user_id' => $request->user()->id,
+                'to_payment_id' => $pending['last_payment_id'],
+                'payment_count' => $pending['payment_count'],
+                'expected_amount' => $pending['expected_amount'],
+                'received_amount' => $data['received_amount'],
                 'difference' => $difference,
                 'note' => $data['note'] ?? null,
-                'closed_at' => now(),
+                'created_at' => now(),
             ]);
         });
 
-        AuditLog::record('cash.closed', 'CashClosing', (string) $closing->id, [
-            'closing_date' => $today,
-            'expected_amount' => (float) $closing->expected_amount,
-            'counted_amount' => (float) $closing->counted_amount,
-            'difference' => (float) $closing->difference,
+        AuditLog::record('cash.handover', 'CashHandover', (string) $handover->id, [
+            'cashier_user_id' => $handover->cashier_user_id,
+            'expected_amount' => (float) $handover->expected_amount,
+            'received_amount' => (float) $handover->received_amount,
+            'difference' => (float) $handover->difference,
         ]);
 
-        return response()->json($closing, 201);
+        return response()->json($this->show($handover)->getData(true), 201);
     }
 
-    /** Réouverture (erreur de saisie, paiement oublié) : motivée et journalisée. */
-    public function reopen(Request $request, CashClosing $closing)
+    /** Détail d'une remise (bordereau) : les paiements couverts. */
+    public function show(CashHandover $handover)
     {
-        $data = $request->validate(['reason' => ['required', 'string', 'min:5', 'max:255']]);
-        abort_if($closing->reopened_at !== null, 422, 'Cette clôture a déjà été rouverte.');
+        $abortUnlessAllowed = request()->user()->hasPermission('cash.receive') || request()->user()->id === $handover->cashier_user_id;
+        abort_unless($abortUnlessAllowed, 403, 'Ce bordereau ne vous concerne pas.');
 
-        $closing->update([
-            'reopened_at' => now(),
-            'reopened_by_user_id' => $request->user()->id,
-            'reopen_reason' => $data['reason'],
-        ]);
+        $previous = (int) CashHandover::where('cashier_user_id', $handover->cashier_user_id)->where('id', '<', $handover->id)->max('to_payment_id');
+        $payments = Payment::with(['student:id,first_name,last_name,matricule,class_id', 'student.schoolClass:id,label'])
+            ->where('cashier_user_id', $handover->cashier_user_id)
+            ->where('id', '>', $previous)->where('id', '<=', $handover->to_payment_id)
+            ->orderBy('id')->get()
+            ->map(fn (Payment $p) => [
+                'reference_code' => $p->reference_code,
+                'payment_date' => $p->payment_date->toDateString(),
+                'student' => $p->student ? trim($p->student->last_name.' '.$p->student->first_name) : null,
+                'class' => $p->student?->schoolClass?->label,
+                'amount' => (float) $p->total_paid_amount,
+            ]);
 
-        AuditLog::record('cash.reopened', 'CashClosing', (string) $closing->id, [
-            'closing_date' => $closing->closing_date->toDateString(),
-            'cashier_user_id' => $closing->cashier_user_id,
-            'reason' => $data['reason'],
-        ]);
-
-        return response()->json($closing);
-    }
-
-    private function myDay(int $userId): array
-    {
-        $today = today()->toDateString();
-
-        return [
-            'date' => $today,
-            ...$this->report->expectedFor($userId, $today),
-            'closed' => CashClosing::isClosed($userId, $today),
-        ];
+        return response()->json([...CashReport::handoverRow($handover->load('cashier:id,full_name', 'receiver:id,full_name')), 'payments' => $payments]);
     }
 }

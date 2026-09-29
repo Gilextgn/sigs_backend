@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 class School extends Model
 {
     protected $fillable = [
-        'name', 'suspended_at', 'suspension_reason',
+        'name', 'group_code', 'site_label', 'suspended_at', 'suspension_reason',
         'subscription_due_at', 'auto_suspend', 'grace_days',
         'contact_name', 'contact_phone', 'city', 'notes', 'plan_amount',
     ];

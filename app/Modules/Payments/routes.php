@@ -15,8 +15,9 @@ Route::middleware('auth:sanctum')->prefix('payments')->group(function () {
 
 Route::middleware('auth:sanctum')->prefix('cash')->group(function () {
     Route::get('/report', [CashController::class, 'report'])->middleware('permission:payments.view');
-    Route::post('/closings', [CashController::class, 'close'])->middleware('permission:cash.close');
-    Route::post('/closings/{closing}/reopen', [CashController::class, 'reopen'])->middleware('permission:cash.reopen');
+    Route::get('/pending', [CashController::class, 'pending'])->middleware('permission:payments.view');
+    Route::post('/handovers', [CashController::class, 'receive'])->middleware('permission:cash.receive');
+    Route::get('/handovers/{handover}', [CashController::class, 'show'])->middleware('permission:payments.view');
 });
 
 // Public : QR code imprimé sur le reçu. Limité pour empêcher de deviner des jetons.

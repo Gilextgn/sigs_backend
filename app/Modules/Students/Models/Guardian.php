@@ -7,6 +7,13 @@ use Illuminate\Database\Eloquent\Model;
 class Guardian extends Model
 {
     use \App\Support\BelongsToSchool;
+    use \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit. */
+    protected string $auditName = 'tuteur';
+
+    /** Champs chiffrés : jamais recopiés en clair dans le journal. */
+    protected array $auditHidden = ['full_name', 'phone', 'address', 'email', 'whatsapp'];
 
     public $timestamps = false;
 

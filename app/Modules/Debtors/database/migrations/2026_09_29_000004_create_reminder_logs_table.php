@@ -19,7 +19,7 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('school_id')->index();
             $table->foreignId('student_id')->constrained('students')->cascadeOnDelete();
-            $table->string('channel', 20);   // email | whatsapp | whatsapp_manual | paper
+            $table->string('channel', 20);   // email | whatsapp | whatsapp_manual
             $table->string('recipient', 120)->nullable();
             $table->string('status', 20);    // sent | failed
             $table->text('error')->nullable();

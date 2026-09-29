@@ -68,7 +68,67 @@ class DashboardController extends Controller
         ]);
     }
 
+    /**
+     * Tableau de bord du groupe scolaire : chaque site (mêmes chiffres que son
+     * accueil) plus l'état de ses caisses du jour et ses annulations, et le
+     * total du groupe. Réservé à un administrateur ayant plusieurs sites.
+     */
+    public function groupOverview(Request $request)
+    {
+        $sites = \App\Support\SchoolGroup::accessibleSites($request->user());
+        abort_if($sites->count() < 2, 403, "Ce compte n'a pas plusieurs sites.");
+
+        $activeId = app('currentSchoolId');
+        $today = now()->toDateString();
+
+        $rows = $sites->map(function ($site) use ($today) {
+            // Chaque site est lu avec son propre filtre : aucune donnée ne se mélange.
+            app()->instance('currentSchoolId', $site->id);
+            $summary = $this->summary()->getData(true);
+
+            // Argent encaissé par chaque caissier et pas encore remis au directeur.
+            $report = app(\Modules\Payments\Services\CashReport::class);
+            $pending = Payment::query()->distinct()->pluck('cashier_user_id')
+                ->map(fn ($id) => $report->pendingFor((int) $id))->filter(fn ($row) => $row['payment_count'] > 0);
+            $cancellations = Payment::onlyTrashed()->whereDate('deleted_at', $today);
+
+            return [
+                'id' => $site->id,
+                'label' => \App\Support\SchoolGroup::label($site),
+                'suspended' => $site->isSuspended(),
+                ...$summary,
+                'cash' => [
+                    'cashiers_with_pending' => $pending->count(),
+                    'pending_amount' => round((float) $pending->sum('expected_amount'), 2),
+                    'cancellations_today' => (clone $cancellations)->count(),
+                    'cancelled_amount_today' => round((float) (clone $cancellations)->sum('total_paid_amount'), 2),
+                ],
+            ];
+        })->values();
+
+        app()->instance('currentSchoolId', $activeId);
+
+        $sum = fn (string $path) => round($rows->sum(fn ($row) => data_get($row, $path, 0)), 2);
+
+        return response()->json([
+            'sites' => $rows,
+            'totals' => [
+                'students' => $sum('students'),
+                'today' => $sum('today.total'),
+                'today_payments' => $sum('today.payment_count'),
+                'month' => $sum('month.total'),
+                'total_collected' => $sum('total_collected'),
+                'outstanding' => $sum('outstanding'),
+                'debtors' => $sum('debtors'),
+                'theoretical_total' => $sum('theoretical_total'),
+                'cancellations_today' => $sum('cash.cancellations_today'),
+                'pending_amount' => $sum('cash.pending_amount'),
+            ],
+        ]);
+    }
+
     public function recentPayments()
+
     {
         return Payment::with(['student:id,matricule,first_name,last_name', 'cashier:id,full_name'])
             ->orderByDesc('created_at')

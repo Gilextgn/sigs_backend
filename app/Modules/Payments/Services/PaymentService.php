@@ -20,12 +20,6 @@ class PaymentService
 {
     public function create(int $studentId, array $items, int $cashierUserId): Payment
     {
-        abort_if(
-            \Modules\Payments\Models\CashClosing::isClosed($cashierUserId, now()->toDateString()),
-            422,
-            "Votre caisse du jour est clôturée : demandez à l'administrateur de la rouvrir pour encaisser.",
-        );
-
         return DB::transaction(function () use ($studentId, $items, $cashierUserId) {
             $enrichedItems = [];
             $total = 0.0;

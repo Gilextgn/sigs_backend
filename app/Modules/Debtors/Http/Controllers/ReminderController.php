@@ -24,6 +24,7 @@ class ReminderController extends Controller
             'whatsapp_auto' => $this->reminders->whatsappAuto(),
             'placeholders' => ReminderService::PLACEHOLDERS,
             'default_template' => ReminderService::DEFAULT_TEMPLATE,
+            'default_notice' => ReminderService::DEFAULT_NOTICE,
             'rows' => $this->reminders->candidates($horizon),
             'history' => ReminderLog::with('sender:id,full_name')->orderByDesc('id')->limit(30)->get()
                 ->map(fn (ReminderLog $log) => [
@@ -50,6 +51,7 @@ class ReminderController extends Controller
             'channels' => ['present', 'array'],
             'channels.*' => ['in:email,whatsapp'],
             'template' => ['required', 'string', 'max:1000'],
+            'notice_template' => ['nullable', 'string', 'max:1500'],
         ]);
 
         $config = $this->reminders->saveConfig($data);
@@ -82,18 +84,6 @@ class ReminderController extends Controller
         abort_unless($row, 404, 'Rien à relancer pour cet élève.');
 
         return response()->json($this->reminders->logManual($row, $request->user()->id), 201);
-    }
-
-    /** Avis papier imprimés pour être remis aux élèves : tracés comme les autres relances. */
-    public function logPaper(Request $request)
-    {
-        $data = $request->validate(['student_ids' => ['required', 'array', 'min:1'], 'student_ids.*' => ['integer']]);
-        $rows = $this->reminders->candidates(90)->whereIn('student_id', $data['student_ids']);
-        foreach ($rows as $row) {
-            $this->reminders->logChannel($row, 'paper', $request->user()->id);
-        }
-
-        return response()->json(['logged' => $rows->count()], 201);
     }
 
     /** Relances automatiques du jour, lancées après la réponse (première visite de la journée). */

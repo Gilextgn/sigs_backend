@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Modules\Payments\Http\Requests\StorePaymentRequest;
-use Modules\Payments\Models\CashClosing;
 use Modules\Payments\Models\Payment;
 use Modules\Payments\Services\PaymentLineBalances;
 use Modules\Payments\Services\PaymentService;
@@ -142,10 +141,11 @@ class PaymentController extends Controller
     {
         abort_unless($request->user()->hasPermission('payments.delete'), 403);
         $data = $request->validate(['reason' => ['required', 'string', 'min:5', 'max:255']]);
+        // L'argent de ce paiement a déjà été remis au directeur : l'annuler fausserait la remise.
         abort_if(
-            CashClosing::isClosed($payment->cashier_user_id, $payment->payment_date->toDateString()),
+            $payment->id <= \Modules\Payments\Models\CashHandover::lastRemittedPaymentId($payment->cashier_user_id),
             422,
-            'La caisse de cette journée est clôturée : rouvrez-la avant de supprimer ce paiement.',
+            'Ce paiement a déjà été remis au directeur (remise de caisse) : il ne peut plus être annulé.',
         );
 
         // Qui et pourquoi : l'annulation apparaît dans le point de caisse.

@@ -3,7 +3,7 @@
 namespace Modules\Payments\Services;
 
 use Illuminate\Support\Collection;
-use Modules\Payments\Models\CashClosing;
+use Modules\Payments\Models\CashHandover;
 use Modules\Payments\Models\Payment;
 
 /**
@@ -36,10 +36,10 @@ class CashReport
             ->get();
         $deleters = \App\Models\User::whereIn('id', $cancellations->pluck('deleted_by_user_id')->filter()->unique())->pluck('full_name', 'id');
 
-        $closings = CashClosing::with('cashier:id,full_name', 'reopenedBy:id,full_name')
-            ->whereDate('closing_date', '>=', $from)->whereDate('closing_date', '<=', $to)
+        $handovers = CashHandover::with('cashier:id,full_name', 'receiver:id,full_name')
+            ->whereDate('created_at', '>=', $from)->whereDate('created_at', '<=', $to)
             ->when($cashierId, fn ($q) => $q->where('cashier_user_id', $cashierId))
-            ->orderBy('closing_date')->orderBy('closed_at')
+            ->orderBy('id')
             ->get();
 
         return [
@@ -75,30 +75,44 @@ class CashReport
                 'deleted_by' => $deleters[$p->deleted_by_user_id] ?? null,
                 'reason' => $p->deletion_reason,
             ])->values(),
-            'closings' => $closings->map(fn (CashClosing $c) => [
-                'id' => $c->id,
-                'closing_date' => $c->closing_date->toDateString(),
-                'cashier_id' => $c->cashier_user_id,
-                'cashier' => $c->cashier?->full_name,
-                'payment_count' => $c->payment_count,
-                'expected_amount' => (float) $c->expected_amount,
-                'counted_amount' => (float) $c->counted_amount,
-                'difference' => (float) $c->difference,
-                'note' => $c->note,
-                'closed_at' => $c->closed_at?->toIso8601String(),
-                'reopened_at' => $c->reopened_at?->toIso8601String(),
-                'reopened_by' => $c->reopenedBy?->full_name,
-                'reopen_reason' => $c->reopen_reason,
-            ])->values(),
+            'handovers' => $handovers->map(fn (CashHandover $h) => self::handoverRow($h))->values(),
         ];
     }
 
-    /** Montant qu'un caissier doit avoir en caisse pour une journée. */
-    public function expectedFor(int $cashierId, string $date): array
+    /**
+     * Ce qu'un caissier doit remettre : ses paiements (non annulés) depuis sa
+     * dernière remise.
+     */
+    public function pendingFor(int $cashierId): array
     {
-        $payments = Payment::where('cashier_user_id', $cashierId)->whereDate('payment_date', $date)->get(['total_paid_amount']);
+        $payments = Payment::where('cashier_user_id', $cashierId)
+            ->where('id', '>', CashHandover::lastRemittedPaymentId($cashierId))
+            ->orderBy('id')
+            ->get(['id', 'total_paid_amount', 'payment_date']);
 
-        return ['payment_count' => $payments->count(), 'expected_amount' => $this->sum($payments)];
+        return [
+            'payment_count' => $payments->count(),
+            'expected_amount' => $this->sum($payments),
+            'last_payment_id' => (int) $payments->max('id'),
+            'first_date' => $payments->first()?->payment_date?->toDateString(),
+            'last_date' => $payments->last()?->payment_date?->toDateString(),
+        ];
+    }
+
+    public static function handoverRow(CashHandover $h): array
+    {
+        return [
+            'id' => $h->id,
+            'cashier_id' => $h->cashier_user_id,
+            'cashier' => $h->cashier?->full_name,
+            'received_by' => $h->receiver?->full_name,
+            'payment_count' => $h->payment_count,
+            'expected_amount' => (float) $h->expected_amount,
+            'received_amount' => (float) $h->received_amount,
+            'difference' => (float) $h->difference,
+            'note' => $h->note,
+            'created_at' => $h->created_at?->toIso8601String(),
+        ];
     }
 
     private function byClass(Collection $payments): Collection

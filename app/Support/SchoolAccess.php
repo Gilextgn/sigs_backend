@@ -51,6 +51,8 @@ class SchoolAccess
             'permissions' => $user->permissions(),
             'school' => $school?->summary(),
             'must_change_password' => (bool) $user->must_change_password,
+            // Sites du groupe scolaire accessibles (plus d'un : le directeur peut changer de site).
+            'sites' => SchoolGroup::accessibleSites($user)->map(fn ($site) => ['id' => $site->id, 'label' => SchoolGroup::label($site)])->values()->all(),
         ];
     }
 }

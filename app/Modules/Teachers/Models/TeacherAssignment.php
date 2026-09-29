@@ -8,6 +8,15 @@ use Modules\SchoolClasses\Models\SchoolClass;
 class TeacherAssignment extends Model
 {
     use \App\Support\BelongsToSchool;
+    use \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit. */
+    protected string $auditName = 'affectation';
+
+    public function auditLabel(): string
+    {
+        return ($this->subject?->label ?? 'matière').' — '.($this->schoolClass?->label ?? 'classe');
+    }
 
     protected $fillable = ['school_id', 'academic_year_id', 'teacher_id', 'class_id', 'subject_id', 'hourly_rate', 'weekly_hours', 'is_active'];
 

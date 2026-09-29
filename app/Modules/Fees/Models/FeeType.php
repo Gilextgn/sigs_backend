@@ -10,6 +10,10 @@ use Modules\SchoolClasses\Models\SchoolClass;
 class FeeType extends Model
 {
     use \App\Support\BelongsToSchool;
+    use \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit. */
+    protected string $auditName = 'frais';
 
     /** Mois d'une année scolaire, dans l'ordre de l'année (septembre → août). */
     public const SCHOOL_YEAR_MONTHS = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];

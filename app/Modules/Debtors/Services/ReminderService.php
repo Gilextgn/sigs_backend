@@ -25,6 +25,9 @@ class ReminderService
 
     public const PLACEHOLDERS = ['parent', 'eleve', 'classe', 'montant', 'detail', 'echeance', 'ecole'];
 
+    /** Avis papier général (le même pour tous, deux par feuille) : {tranche}, {echeance}, {ecole}. */
+    public const DEFAULT_NOTICE = "Le Directeur informe les parents d'élèves que la {tranche} des frais de scolarité arrive (ou est arrivée) à échéance le {echeance}.\nLes parents qui ne l'ont pas encore soldée sont priés de passer à la caisse de l'établissement dans les meilleurs délais.\nSi vous avez déjà réglé cette tranche, veuillez ne pas tenir compte de cet avis.\nMerci de votre compréhension.";
+
     public function __construct(private DebtCalculator $calculator)
     {
     }
@@ -42,6 +45,7 @@ class ReminderService
             'overdue_every' => (int) ($stored['overdue_every'] ?? 7),
             'channels' => array_values($stored['channels'] ?? ['whatsapp', 'email']),
             'template' => (string) ($stored['template'] ?? self::DEFAULT_TEMPLATE),
+            'notice_template' => (string) ($stored['notice_template'] ?? self::DEFAULT_NOTICE),
             'last_auto_run' => $stored['last_auto_run'] ?? null,
         ];
     }
@@ -187,12 +191,6 @@ class ReminderService
     public function logManual(array $row, int $userId): ReminderLog
     {
         return $this->attempt($row, 'whatsapp_manual', $row['whatsapp'] ?? $row['phone'], $userId, fn () => null);
-    }
-
-    /** Relance faite hors application (avis papier remis à l'élève…) : tracée. */
-    public function logChannel(array $row, string $channel, int $userId): ReminderLog
-    {
-        return $this->attempt($row, $channel, null, $userId, fn () => null);
     }
 
     public function whatsappAuto(): bool

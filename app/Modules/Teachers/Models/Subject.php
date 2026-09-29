@@ -7,6 +7,10 @@ use Illuminate\Database\Eloquent\Model;
 class Subject extends Model
 {
     use \App\Support\BelongsToSchool;
+    use \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit. */
+    protected string $auditName = 'matière';
 
     protected $fillable = ['school_id', 'code', 'label', 'level', 'is_active'];
 

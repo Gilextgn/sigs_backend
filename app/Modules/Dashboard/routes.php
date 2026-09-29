@@ -8,4 +8,5 @@ Route::middleware(['auth:sanctum', 'permission:dashboard.view'])->prefix('dashbo
     Route::get('/recent-payments', [DashboardController::class, 'recentPayments']);
     Route::get('/top-debtors', [DashboardController::class, 'topDebtors']);
     Route::get('/statistics', [DashboardController::class, 'statistics']);
+    Route::get('/group', [DashboardController::class, 'groupOverview']);
 });

@@ -107,7 +107,17 @@ class UserController extends Controller
 
         $syncData = collect($ids)->mapWithKeys(fn ($id) => [$id => ['granted' => true]])->all();
 
-        $user->belongsToMany(Permission::class, 'user_permissions')->sync($syncData);
+        $result = $user->belongsToMany(Permission::class, 'user_permissions')->sync($syncData);
         cache()->forget("user:{$user->id}:permissions");
+
+        // Droits accordés ou retirés : traçabilité (la table de liaison échappe au suivi automatique).
+        $codes = fn (array $permissionIds) => Permission::whereIn('id', $permissionIds)->pluck('code')->all();
+        if ($result['attached'] !== [] || $result['detached'] !== []) {
+            \Modules\Security\Models\AuditLog::record('user.permissions_changed', 'utilisateur', (string) $user->id, [
+                'user' => $user->full_name,
+                'granted' => $codes($result['attached']),
+                'revoked' => $codes($result['detached']),
+            ]);
+        }
     }
 }

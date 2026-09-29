@@ -8,6 +8,10 @@ use Modules\Tranches\Models\TuitionInstallment;
 class SchoolClass extends Model
 {
     use \App\Support\BelongsToSchool;
+    use \App\Support\Audited;
+
+    /** Nom affiché dans le journal d'audit. */
+    protected string $auditName = 'classe';
 
     protected $table = 'classes';
 

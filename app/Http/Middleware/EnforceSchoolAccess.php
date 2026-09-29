@@ -32,9 +32,17 @@ class EnforceSchoolAccess
 
         $school = SchoolAccess::resolve($user);
 
+        // Groupe scolaire : un administrateur peut travailler sur un autre site
+        // de son groupe (en-tête X-Site-Id). Tout autre site demandé est ignoré.
+        $siteId = (int) $request->header('X-Site-Id');
+        if ($siteId && $user->school_id !== null && $siteId !== $user->school_id
+            && in_array($siteId, \App\Support\SchoolGroup::accessibleSites($user)->pluck('id')->all(), true)) {
+            $school = \Modules\Platform\Models\School::find($siteId);
+        }
+
         // Le filtrage doit être actif même quand on refuse la requête ensuite,
         // pour qu'aucun code ultérieur ne lise sans filtre.
-        app()->instance('currentSchoolId', $user->school_id);
+        app()->instance('currentSchoolId', $school?->id ?? $user->school_id);
 
         if ($request->is('api/auth/*')) {
             return $next($request);

@@ -73,14 +73,4 @@ class AdminNotificationTest extends TestCase
         $this->actingAs($this->admin)->getJson('/api/notifications')->assertJsonPath('unread_count', 0);
         $this->assertDatabaseHas('audit_logs', ['action_code' => 'payment.created']);
     }
-
-    public function test_a_cash_closing_by_a_cashier_is_notified(): void
-    {
-        $this->pay($this->cashier);
-        $this->actingAs($this->cashier)->postJson('/api/cash/closings', ['counted_amount' => 25000, 'note' => 'Billet manquant'])->assertCreated();
-
-        $this->actingAs($this->admin)->getJson('/api/notifications')
-            ->assertJsonPath('data.0.title', 'Caisse du jour clôturée par Joséphine DELAPOCHE')
-            ->assertJsonPath('data.0.body', 'Attendu 30 000 XOF · compté 25 000 XOF · écart -5 000 XOF');
-    }
 }
