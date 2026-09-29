@@ -201,6 +201,9 @@ class PlatformSchoolController extends Controller
             // Groupe scolaire : même code = sites d'un même directeur.
             'group_code' => ['sometimes', 'nullable', 'string', 'max:60'],
             'site_label' => ['sometimes', 'nullable', 'string', 'max:80'],
+            // Onglets du menu masqués pour cette école (codes des entrées du menu).
+            'hidden_modules' => ['sometimes', 'nullable', 'array'],
+            'hidden_modules.*' => ['string', 'max:40'],
             ...self::CONTACT_RULES,
         ]);
         if (array_key_exists('group_code', $data)) {
@@ -322,6 +325,7 @@ class PlatformSchoolController extends Controller
             'name' => $school->name,
             'group_code' => $school->group_code,
             'site_label' => $school->site_label,
+            'hidden_modules' => $school->hidden_modules ?? [],
             'status' => $school->status(),
             'suspension_kind' => $school->suspensionKind(),
             'suspension_reason' => $school->suspension_reason,

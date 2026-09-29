@@ -78,9 +78,13 @@ class User extends Authenticatable
             $overrides = $this->belongsToMany(
                 \Modules\Users\Models\Permission::class,
                 'user_permissions'
-            )->wherePivot('granted', 1)->pluck('code')->all();
+            )->withPivot('granted')->get(['permissions.code']);
 
-            return array_values(array_unique([...$rolePermissions, ...$overrides]));
+            // Droits ajoutés (granted = 1) et droits du rôle retirés à ce compte (granted = 0).
+            $granted = $overrides->where('pivot.granted', true)->pluck('code')->all();
+            $revoked = $overrides->where('pivot.granted', false)->pluck('code')->all();
+
+            return array_values(array_diff(array_unique([...$rolePermissions, ...$granted]), $revoked));
         });
     }
 

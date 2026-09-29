@@ -13,7 +13,7 @@ class AttendanceController extends Controller
 {
     public function sessions(Request $request)
     {
-        $sessions = TeachingSession::with(['assignment.teacher:id,full_name', 'schoolClass:id,label', 'assignment.subject:id,label', 'attendance'])
+        $sessions = TeachingSession::with(['assignment.teacher:id,full_name,level', 'schoolClass:id,label,sort_order', 'assignment.subject:id,label', 'attendance'])
             ->when($request->date, fn ($query, $date) => $query->whereDate('session_date', $date))
             ->orderByDesc('session_date')->orderBy('starts_at')->get();
 
@@ -107,11 +107,47 @@ class AttendanceController extends Controller
 
         $session = TeachingSession::findOrFail($data['teaching_session_id']);
         abort_unless($session->assignment->teacher_id === (int) $data['teacher_id'], 422, 'Cet enseignant ne correspond pas à la séance.');
-        abort_if($data['status'] === 'late' && (int) ($data['absence_minutes'] ?? 0) <= 0, 422, 'Indiquez le nombre de minutes de retard.');
+
+        return $this->record($session, $data);
+    }
+
+    /**
+     * Primaire : un maître tient sa classe toute la journée. Une seule saisie
+     * vaut pour tous ses cours du jour dans cette classe (un retard n'est
+     * compté que sur le premier cours).
+     */
+    public function storeDay(Request $request)
+    {
+        $data = $request->validate([
+            'teacher_id' => ['required', \App\Support\SchoolRule::exists('teachers')],
+            'class_id' => ['required', \App\Support\SchoolRule::exists('classes')],
+            'date' => ['required', 'date'],
+            'status' => ['required', 'in:present,late,absent,justified'],
+            'absence_minutes' => ['nullable', 'integer', 'min:0'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $sessions = TeachingSession::with('assignment')
+            ->whereDate('session_date', $data['date'])->where('class_id', $data['class_id'])
+            ->whereHas('assignment', fn ($q) => $q->where('teacher_id', $data['teacher_id']))
+            ->orderBy('starts_at')->get();
+        abort_if($sessions->isEmpty(), 422, 'Aucune séance de cet enseignant dans cette classe ce jour-là : générez d’abord les séances.');
+
+        return $sessions->values()->map(fn (TeachingSession $session, int $index) => $this->record($session, [
+            'teacher_id' => $data['teacher_id'],
+            'status' => $data['status'],
+            'absence_minutes' => $index === 0 ? ($data['absence_minutes'] ?? 0) : 0,
+            'reason' => $data['reason'] ?? null,
+        ], allowNoLateMinutes: $index > 0));
+    }
+
+    private function record(TeachingSession $session, array $data, bool $allowNoLateMinutes = false): TeacherAttendance
+    {
+        abort_if(! $allowNoLateMinutes && $data['status'] === 'late' && (int) ($data['absence_minutes'] ?? 0) <= 0, 422, 'Indiquez le nombre de minutes de retard.');
         abort_if($data['status'] === 'justified' && blank($data['reason'] ?? null), 422, 'Indiquez le motif de l’absence justifiée.');
 
         // Les minutes ne comptent que pour un retard : ailleurs elles induiraient en erreur.
-        $data['absence_minutes'] = $data['status'] === 'late' ? min((int) $data['absence_minutes'], $session->planned_minutes) : 0;
+        $data['absence_minutes'] = $data['status'] === 'late' ? min((int) ($data['absence_minutes'] ?? 0), $session->planned_minutes) : 0;
         $data['replacement_teacher_id'] = null;
 
         // Il ne peut pas être payé pour deux cours donnés en même temps.
@@ -120,7 +156,7 @@ class AttendanceController extends Controller
                 ->whereDate('session_date', $session->session_date)->where('id', '!=', $session->id)->get();
             $paidClash = $others->first(fn (TeachingSession $other) => $this->overlaps($session, $other)
                 && in_array($other->attendance?->status, ['present', 'late', 'justified'], true));
-            abort_if($paidClash !== null, 422, 'Cet enseignant est déjà noté présent en '.($paidClash?->schoolClass?->label ?? 'une autre classe').' à la même heure : notez ce cours-ci Absent ou Remplacé, et corrigez l’emploi du temps.');
+            abort_if($paidClash !== null, 422, 'Cet enseignant est déjà noté présent en '.($paidClash?->schoolClass?->label ?? 'une autre classe').' à la même heure : notez ce cours-ci Absent, et corrigez l’emploi du temps.');
         }
 
         $realizedMinutes = match ($data['status']) {
@@ -136,7 +172,7 @@ class AttendanceController extends Controller
 
         return TeacherAttendance::updateOrCreate(
             ['teaching_session_id' => $session->id, 'teacher_id' => $data['teacher_id']],
-            $data,
+            collect($data)->only(['teacher_id', 'status', 'absence_minutes', 'reason', 'replacement_teacher_id'])->all(),
         );
     }
 

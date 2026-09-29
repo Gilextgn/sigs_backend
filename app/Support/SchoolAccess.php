@@ -52,6 +52,8 @@ class SchoolAccess
             'school' => $school?->summary(),
             'must_change_password' => (bool) $user->must_change_password,
             // Sites du groupe scolaire accessibles (plus d'un : le directeur peut changer de site).
+            // Onglets masqués par la plateforme pour l'école (le site actif pour un directeur de groupe).
+            'hidden_modules' => $user->school_id !== null ? (School::find(CurrentSchool::isBound() ? CurrentSchool::id() : $user->school_id)?->hidden_modules ?? []) : [],
             'sites' => SchoolGroup::accessibleSites($user)->map(fn ($site) => ['id' => $site->id, 'label' => SchoolGroup::label($site)])->values()->all(),
         ];
     }

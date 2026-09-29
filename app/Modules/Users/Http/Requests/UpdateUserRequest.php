@@ -24,6 +24,8 @@ class UpdateUserRequest extends FormRequest
             'role_id' => ['sometimes', Rule::exists('roles', 'id')->where(fn ($query) => $query->where('code', '!=', 'platform_owner'))],
             'status' => ['sometimes', 'in:active,inactive,locked'],
             'permissions' => ['array'],
+            // « effective » : la liste complète des droits cochés (le rôle peut être restreint).
+            'permissions_mode' => ['nullable', 'in:effective'],
             'permissions.*' => ['string', Rule::exists('permissions', 'code')->where(fn ($query) => $query->where('code', 'not like', 'platform.%'))],
         ];
     }

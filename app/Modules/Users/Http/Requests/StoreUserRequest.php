@@ -23,6 +23,8 @@ class StoreUserRequest extends FormRequest
             'status' => ['nullable', 'in:active,inactive,locked'],
             // permissions individuelles cochées en plus du rôle (checkbox UI)
             'permissions' => ['array'],
+            // « effective » : la liste complète des droits cochés (le rôle peut être restreint).
+            'permissions_mode' => ['nullable', 'in:effective'],
             'permissions.*' => ['string', Rule::exists('permissions', 'code')->where(fn ($query) => $query->where('code', 'not like', 'platform.%'))],
         ];
     }

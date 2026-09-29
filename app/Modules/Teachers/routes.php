@@ -39,6 +39,8 @@ Route::middleware(['auth:sanctum', 'permission:teachers.manage'])->group(functio
     Route::delete('schedules/{schedule}', [ScheduleController::class, 'destroy']);
 
     Route::post('teacher-attendances', [AttendanceController::class, 'store']);
+    // Primaire : présence du maître pour toute la journée dans sa classe.
+    Route::post('teacher-attendances/day', [AttendanceController::class, 'storeDay']);
 
     Route::post('teaching-sessions', [AttendanceController::class, 'createSession']);
     Route::post('teaching-sessions/generate', [AttendanceController::class, 'generate']);

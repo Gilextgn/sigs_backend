@@ -21,8 +21,8 @@ class DefaultRolePermissions
         ],
         'secretary' => [
             'dashboard.view', 'students.view', 'students.create', 'students.update', 'students.reenroll',
-            'classes.view', 'tranches.view', 'fees.view',
-            'payments.view', 'payments.print', 'debtors.print', 'teachers.view', 'cash.close',
+            'classes.view',
+            'payments.view', 'payments.print', 'debtors.print',
         ],
         'accountant' => [
             'dashboard.view', 'students.view', 'classes.view', 'tranches.view', 'fees.view',

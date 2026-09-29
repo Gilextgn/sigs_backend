@@ -48,7 +48,7 @@ class UserController extends Controller
                 'school_id' => \App\Support\CurrentSchool::id(),
             ]);
 
-            $this->syncPermissionOverrides($user, $data['permissions'] ?? []);
+            $this->syncPermissionOverrides($user, $data['permissions'] ?? [], ($data['permissions_mode'] ?? null) === 'effective');
 
             return $user;
         });
@@ -63,6 +63,8 @@ class UserController extends Controller
         return response()->json([
             ...$user->toArray(),
             'permission_overrides' => $this->overriddenPermissionCodes($user),
+            // Droits réels du compte (rôle + ajouts − retraits) : ce que le formulaire coche.
+            'effective_permissions' => $user->permissions(),
         ]);
     }
 
@@ -77,10 +79,10 @@ class UserController extends Controller
                 unset($data['password']);
             }
 
-            $user->update(collect($data)->except('permissions')->all());
+            $user->update(collect($data)->except(['permissions', 'permissions_mode'])->all());
 
             if (array_key_exists('permissions', $data)) {
-                $this->syncPermissionOverrides($user, $data['permissions']);
+                $this->syncPermissionOverrides($user->fresh('role'), $data['permissions'], ($data['permissions_mode'] ?? null) === 'effective');
             }
         });
 
@@ -101,11 +103,23 @@ class UserController extends Controller
      * chaque permission cochée devient une surcharge explicite (granted=1)
      * dans user_permissions, en plus des permissions héritées du rôle.
      */
-    private function syncPermissionOverrides(User $user, array $permissionCodes): void
+    private function syncPermissionOverrides(User $user, array $permissionCodes, bool $effective = false): void
     {
-        $ids = Permission::whereIn('code', $permissionCodes)->pluck('id', 'code');
-
-        $syncData = collect($ids)->mapWithKeys(fn ($id) => [$id => ['granted' => true]])->all();
+        if ($effective) {
+            // Liste complète voulue : on ajoute ce que le rôle ne donne pas, on retire ce qu'il donne en trop.
+            $roleCodes = $user->role?->permissions()->pluck('code')->all() ?? [];
+            // Garde-fou : on ne se retire pas à soi-même le droit de gérer les utilisateurs.
+            if ($user->id === request()->user()?->id && request()->user()->hasPermission('users.manage')) {
+                $permissionCodes = array_values(array_unique([...$permissionCodes, 'users.manage']));
+            }
+            $grantIds = Permission::whereIn('code', array_diff($permissionCodes, $roleCodes))->pluck('id');
+            $revokeIds = Permission::whereIn('code', array_diff($roleCodes, $permissionCodes))->pluck('id');
+            $syncData = $grantIds->mapWithKeys(fn ($id) => [$id => ['granted' => true]])->all()
+                + $revokeIds->mapWithKeys(fn ($id) => [$id => ['granted' => false]])->all();
+        } else {
+            $ids = Permission::whereIn('code', $permissionCodes)->pluck('id', 'code');
+            $syncData = collect($ids)->mapWithKeys(fn ($id) => [$id => ['granted' => true]])->all();
+        }
 
         $result = $user->belongsToMany(Permission::class, 'user_permissions')->sync($syncData);
         cache()->forget("user:{$user->id}:permissions");
